@@ -1,11 +1,12 @@
 package pubsub
 
 import (
+	"strconv"
+
 	"github.com/hdt3213/godis/datastruct/list"
 	"github.com/hdt3213/godis/interface/redis"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/redis/protocol"
-	"strconv"
 )
 
 var (
@@ -17,6 +18,12 @@ var (
 
 func makeMsg(t string, channel string, code int64) []byte {
 	return []byte("*3\r\n$" + strconv.FormatInt(int64(len(t)), 10) + protocol.CRLF + t + protocol.CRLF +
+		"$" + strconv.FormatInt(int64(len(channel)), 10) + protocol.CRLF + channel + protocol.CRLF +
+		":" + strconv.FormatInt(code, 10) + protocol.CRLF)
+}
+
+func makePushMsg(t string, channel string, code int64) []byte {
+	return []byte(">3\r\n$" + strconv.FormatInt(int64(len(t)), 10) + protocol.CRLF + t + protocol.CRLF +
 		"$" + strconv.FormatInt(int64(len(channel)), 10) + protocol.CRLF + channel + protocol.CRLF +
 		":" + strconv.FormatInt(code, 10) + protocol.CRLF)
 }
@@ -82,7 +89,11 @@ func Subscribe(hub *Hub, c redis.Connection, args [][]byte) redis.Reply {
 
 	for _, channel := range channels {
 		if subscribe0(hub, channel, c) {
-			_, _ = c.Write(makeMsg(_subscribe, channel, int64(c.SubsCount())))
+			if c.GetRespVersion() == redis.Resp3 {
+				_, _ = c.Write(makePushMsg(_subscribe, channel, int64(c.SubsCount())))
+			} else {
+				_, _ = c.Write(makeMsg(_subscribe, channel, int64(c.SubsCount())))
+			}
 		}
 	}
 	return &protocol.NoReply{}
@@ -117,13 +128,21 @@ func UnSubscribe(db *Hub, c redis.Connection, args [][]byte) redis.Reply {
 	defer db.subsLocker.UnLocks(channels...)
 
 	if len(channels) == 0 {
-		_, _ = c.Write(unSubscribeNothing)
+		if c.GetRespVersion() == redis.Resp3 {
+			_, _ = c.Write([]byte(">3\r\n$11\r\nunsubscribe\r\n$-1\n:0\r\n"))
+		} else {
+			_, _ = c.Write(unSubscribeNothing)
+		}
 		return &protocol.NoReply{}
 	}
 
 	for _, channel := range channels {
 		if unsubscribe0(db, channel, c) {
-			_, _ = c.Write(makeMsg(_unsubscribe, channel, int64(c.SubsCount())))
+			if c.GetRespVersion() == redis.Resp3 {
+				_, _ = c.Write(makePushMsg(_unsubscribe, channel, int64(c.SubsCount())))
+			} else {
+				_, _ = c.Write(makeMsg(_unsubscribe, channel, int64(c.SubsCount())))
+			}
 		}
 	}
 	return &protocol.NoReply{}
@@ -147,11 +166,20 @@ func Publish(hub *Hub, args [][]byte) redis.Reply {
 	subscribers, _ := raw.(*list.LinkedList)
 	subscribers.ForEach(func(i int, c interface{}) bool {
 		client, _ := c.(redis.Connection)
-		replyArgs := make([][]byte, 3)
-		replyArgs[0] = messageBytes
-		replyArgs[1] = []byte(channel)
-		replyArgs[2] = message
-		_, _ = client.Write(protocol.MakeMultiBulkReply(replyArgs).ToBytes())
+		if client.GetRespVersion() == redis.Resp3 {
+			pushReply := protocol.MakePushReply([]redis.Reply{
+				protocol.MakeBulkReply(messageBytes),
+				protocol.MakeBulkReply([]byte(channel)),
+				protocol.MakeBulkReply(message),
+			})
+			_, _ = client.Write(pushReply.ToBytes())
+		} else {
+			replyArgs := make([][]byte, 3)
+			replyArgs[0] = messageBytes
+			replyArgs[1] = []byte(channel)
+			replyArgs[2] = message
+			_, _ = client.Write(protocol.MakeMultiBulkReply(replyArgs).ToBytes())
+		}
 		return true
 	})
 	return protocol.MakeIntReply(int64(subscribers.Len()))

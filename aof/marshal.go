@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"time"
 
+	Array "github.com/hdt3213/godis/datastruct/array"
 	"github.com/hdt3213/godis/datastruct/dict"
 	List "github.com/hdt3213/godis/datastruct/list"
 	"github.com/hdt3213/godis/datastruct/set"
@@ -29,6 +30,8 @@ func EntityToCmd(key string, entity *database.DataEntity) *protocol.MultiBulkRep
 		cmd = hashToCmd(key, val)
 	case *SortedSet.SortedSet:
 		cmd = zSetToCmd(key, val)
+	case *Array.Array:
+		cmd = arrayToCmd(key, val)
 	}
 	return cmd
 }
@@ -101,6 +104,30 @@ func zSetToCmd(key string, zset *SortedSet.SortedSet) *protocol.MultiBulkReply {
 		args[2+i*2] = []byte(value)
 		args[3+i*2] = []byte(element.Member)
 		i++
+		return true
+	})
+	return protocol.MakeMultiBulkReply(args)
+}
+
+var arAppendCmd = []byte("ARAPPEND")
+
+func arrayToCmd(key string, arr *Array.Array) *protocol.MultiBulkReply {
+	nonNull := 0
+	arr.ForEach(func(i int, v []byte) bool {
+		if v != nil {
+			nonNull++
+		}
+		return true
+	})
+	args := make([][]byte, 2+nonNull)
+	args[0] = arAppendCmd
+	args[1] = []byte(key)
+	idx := 0
+	arr.ForEach(func(i int, v []byte) bool {
+		if v != nil {
+			args[2+idx] = v
+			idx++
+		}
 		return true
 	})
 	return protocol.MakeMultiBulkReply(args)

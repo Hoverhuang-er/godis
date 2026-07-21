@@ -13,13 +13,15 @@ import (
 	"github.com/hdt3213/godis/config"
 	"github.com/hdt3213/godis/interface/database"
 	"github.com/hdt3213/godis/interface/redis"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/pubsub"
 	"github.com/hdt3213/godis/redis/protocol"
+	"log/slog"
 )
 
-var godisVersion = "1.2.8" // do not modify
+var godisVersion = "1.3.0" // do not modify
+
+var connIDCounter int64
 
 // Server is a redis-server with full capabilities including multiple database, rdb loader, replication
 type Server struct {
@@ -84,7 +86,7 @@ func NewStandaloneServer() *Server {
 		// load rdb
 		err := server.loadRdbFile()
 		if err != nil {
-			logger.Error(err)
+			slog.Error(err.Error())
 		}
 	}
 	server.slaveStatus = initReplSlaveStatus()
@@ -103,7 +105,7 @@ func NewStandaloneServer() *Server {
 func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.Reply) {
 	defer func() {
 		if err := recover(); err != nil {
-			logger.Warn(fmt.Sprintf("error occurs: %v\n%s", err, string(debug.Stack())))
+			slog.Warn(fmt.Sprintf("error occurs: %v\n%s", err, string(debug.Stack())))
 			result = &protocol.UnknownErrReply{}
 		}
 	}()
@@ -122,6 +124,21 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 	if !isAuthenticated(c) {
 		return protocol.MakeErrReply("NOAUTH Authentication required")
 	}
+	// hello
+	if cmdName == "hello" {
+		return execHello(server, c, cmdLine[1:])
+	}
+
+	// client
+	if cmdName == "client" {
+		return execClient(c, cmdLine[1:])
+	}
+
+	// readonly / readwrite (accepted for client compatibility)
+	if cmdName == "readonly" || cmdName == "readwrite" {
+		return &protocol.OkReply{}
+	}
+
 	// info
 	if cmdName == "info" {
 		return Info(server, cmdLine[1:])
@@ -398,7 +415,7 @@ func BGSaveRDB(db *Server, args [][]byte) redis.Reply {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				logger.Error(err)
+				slog.Error(fmt.Sprintf("%v", err))
 			}
 		}()
 		rdbFilename := config.Properties.RDBFilename
@@ -407,7 +424,7 @@ func BGSaveRDB(db *Server, args [][]byte) redis.Reply {
 		}
 		err := db.persister.GenerateRDB(rdbFilename)
 		if err != nil {
-			logger.Error(err)
+			slog.Error(err.Error())
 		}
 	}()
 	return protocol.MakeStatusReply("Background saving started")
@@ -449,6 +466,13 @@ func (server *Server) GetAvgTTL(dbIndex, randomKeyCount int) int64 {
 	return ttlCount / int64(len(keys))
 }
 
+func (server *Server) SetHashFieldChangedCallback(cb database.HashFieldChangeCallback) {
+	for i := range server.dbSet {
+		db := server.mustSelectDB(i)
+		db.hashFieldCallback = cb
+	}
+}
+
 func (server *Server) SetKeyInsertedCallback(cb database.KeyEventCallback) {
 	server.insertCallback = cb
 	for i := range server.dbSet {
@@ -463,5 +487,128 @@ func (server *Server) SetKeyDeletedCallback(cb database.KeyEventCallback) {
 	for i := range server.dbSet {
 		db := server.mustSelectDB(i)
 		db.deleteCallback = cb
+	}
+}
+
+func execHello(server *Server, c redis.Connection, args [][]byte) redis.Reply {
+	proto := 2
+	if len(args) >= 1 {
+		v, err := strconv.Atoi(string(args[0]))
+		if err != nil {
+			return protocol.MakeErrReply("ERR protocol version is not an integer")
+		}
+		if v < 2 || v > 3 {
+			return protocol.MakeErrReply("ERR protocol version is not supported")
+		}
+		proto = v
+	}
+
+	i := 1
+	for i < len(args) {
+		opt := strings.ToUpper(string(args[i]))
+		switch opt {
+		case "AUTH":
+			if i+2 >= len(args) {
+				return protocol.MakeErrReply("ERR AUTH option requires username and password arguments")
+			}
+			password := string(args[i+2])
+			if config.Properties.RequirePass != "" {
+				if config.Properties.RequirePass != password {
+					return protocol.MakeErrReply("ERR invalid password")
+				}
+				c.SetPassword(password)
+			}
+			i += 3
+		case "SETNAME":
+			if i+1 >= len(args) {
+				return protocol.MakeErrReply("ERR SETNAME option requires a client name argument")
+			}
+			i += 2
+		default:
+			return protocol.MakeErrReply("ERR unknown option " + opt)
+		}
+	}
+
+	c.SetRespVersion(redis.RespVersion(proto))
+
+	var role string
+	if c.IsSlave() {
+		role = "slave"
+	} else {
+		role = "master"
+	}
+	mode := "standalone"
+
+	if proto == 3 {
+		// RESP3 Map reply
+		keys := []redis.Reply{
+			protocol.MakeBulkReply([]byte("server")),
+			protocol.MakeBulkReply([]byte("version")),
+			protocol.MakeBulkReply([]byte("proto")),
+			protocol.MakeBulkReply([]byte("id")),
+			protocol.MakeBulkReply([]byte("mode")),
+			protocol.MakeBulkReply([]byte("role")),
+			protocol.MakeBulkReply([]byte("modules")),
+		}
+		values := []redis.Reply{
+			protocol.MakeBulkReply([]byte("godis")),
+			protocol.MakeBulkReply([]byte(godisVersion)),
+			protocol.MakeIntReply(int64(proto)),
+			protocol.MakeIntReply(atomic.AddInt64(&connIDCounter, 1)),
+			protocol.MakeBulkReply([]byte(mode)),
+			protocol.MakeBulkReply([]byte(role)),
+			protocol.MakeMultiBulkReply([][]byte{}), // empty modules list
+		}
+		return protocol.MakeMapReply(keys, values)
+	}
+
+	// RESP2 Array reply (flat key-value pairs)
+	infoPairs := [][]byte{
+		[]byte("server"), []byte("godis"),
+		[]byte("version"), []byte(godisVersion),
+		[]byte("proto"), []byte(strconv.Itoa(proto)),
+		[]byte("id"), []byte(strconv.FormatInt(atomic.AddInt64(&connIDCounter, 1), 10)),
+		[]byte("mode"), []byte(mode),
+		[]byte("role"), []byte(role),
+		[]byte("modules"), []byte{},
+	}
+	return protocol.MakeMultiBulkReply(infoPairs)
+}
+
+func execClient(c redis.Connection, args [][]byte) redis.Reply {
+	if len(args) == 0 {
+		return protocol.MakeErrReply("ERR wrong number of arguments for 'client' command")
+	}
+	sub := strings.ToUpper(string(args[0]))
+	switch sub {
+	case "SETINFO":
+		return &protocol.OkReply{}
+	case "SETNAME":
+		return &protocol.OkReply{}
+	case "GETNAME":
+		return protocol.MakeNullBulkReply()
+	case "NO-EVICT":
+		if len(args) >= 2 {
+			return &protocol.OkReply{}
+		}
+		return protocol.MakeErrReply("ERR wrong number of arguments for 'client|no-evict' command")
+	case "ID":
+		return protocol.MakeIntReply(atomic.AddInt64(&connIDCounter, 1))
+	case "INFO":
+		return protocol.MakeBulkReply([]byte(""))
+	case "LIST":
+		return protocol.MakeBulkReply([]byte(""))
+	case "KILL":
+		return &protocol.OkReply{}
+	case "PAUSE":
+		return &protocol.OkReply{}
+	case "UNPAUSE":
+		return &protocol.OkReply{}
+	case "TRACKING":
+		return &protocol.OkReply{}
+	case "CACHING":
+		return &protocol.OkReply{}
+	default:
+		return protocol.MakeErrReply("ERR unknown subcommand or wrong number of arguments for 'client|" + sub + "' command")
 	}
 }

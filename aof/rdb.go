@@ -5,15 +5,16 @@ import (
 	"strconv"
 	"time"
 
+	Array "github.com/hdt3213/godis/datastruct/array"
 	"github.com/hdt3213/godis/config"
 	"github.com/hdt3213/godis/datastruct/dict"
 	List "github.com/hdt3213/godis/datastruct/list"
 	"github.com/hdt3213/godis/datastruct/set"
 	SortedSet "github.com/hdt3213/godis/datastruct/sortedset"
 	"github.com/hdt3213/godis/interface/database"
-	"github.com/hdt3213/godis/lib/logger"
 	rdb "github.com/hdt3213/rdb/encoder"
 	"github.com/hdt3213/rdb/model"
+	"log/slog"
 )
 
 // todo: forbid concurrent rewrite
@@ -69,7 +70,7 @@ func (persister *Persister) startGenerateRDB(newListener Listener, hook func()) 
 
 	err := persister.aofFile.Sync()
 	if err != nil {
-		logger.Warn("fsync failed")
+		slog.Warn("fsync failed")
 		return nil, err
 	}
 
@@ -79,7 +80,7 @@ func (persister *Persister) startGenerateRDB(newListener Listener, hook func()) 
 	// create tmp file
 	file, err := os.CreateTemp(config.GetTmpDir(), "*.aof")
 	if err != nil {
-		logger.Warn("tmp file create failed")
+		slog.Warn("tmp file create failed")
 		return nil, err
 	}
 	if newListener != nil {
@@ -176,6 +177,15 @@ func (persister *Persister) generateRDB(ctx *RewriteCtx) error {
 					return true
 				})
 				err = encoder.WriteZSetObject(key, entries, opts...)
+			case *Array.Array:
+				var vals [][]byte
+				obj.ForEach(func(i int, v []byte) bool {
+					if v != nil {
+						vals = append(vals, v)
+					}
+					return true
+				})
+				err = encoder.WriteListObject(key, vals, opts...)
 			}
 			if err != nil {
 				err2 = err

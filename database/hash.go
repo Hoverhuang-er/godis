@@ -1,14 +1,29 @@
 package database
 
 import (
+	"strconv"
+	"strings"
+
 	Dict "github.com/hdt3213/godis/datastruct/dict"
+	"github.com/hdt3213/godis/datastruct/search"
 	"github.com/hdt3213/godis/interface/database"
 	"github.com/hdt3213/godis/interface/redis"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/redis/protocol"
-	"strconv"
-	"strings"
 )
+
+func reindexHash(key string, dict Dict.Dict) {
+	fields := make(map[string]string)
+	dict.ForEach(func(field string, val interface{}) bool {
+		if bytes, ok := val.([]byte); ok {
+			fields[field] = string(bytes)
+		}
+		return true
+	})
+	if len(fields) > 0 {
+		search.IndexDocByPrefix(key, fields)
+	}
+}
 
 func (db *DB) getAsDict(key string) (Dict.Dict, protocol.ErrorReply) {
 	entity, exists := db.GetEntity(key)
@@ -40,12 +55,10 @@ func (db *DB) getOrInitDict(key string) (dict Dict.Dict, inited bool, errReply p
 
 // execHSet sets field in hash table
 func execHSet(db *DB, args [][]byte) redis.Reply {
-	// parse args
 	key := string(args[0])
 	field := string(args[1])
 	value := args[2]
 
-	// get or init entity
 	dict, _, errReply := db.getOrInitDict(key)
 	if errReply != nil {
 		return errReply
@@ -53,6 +66,10 @@ func execHSet(db *DB, args [][]byte) redis.Reply {
 
 	result := dict.Put(field, value)
 	db.addAof(utils.ToCmdLine3("hset", args...))
+	if cb := db.hashFieldCallback; cb != nil {
+		cb(db.index, key, field)
+	}
+	reindexHash(key, dict)
 	return protocol.MakeIntReply(int64(result))
 }
 
@@ -62,9 +79,7 @@ func undoHSet(db *DB, args [][]byte) []CmdLine {
 	return rollbackHashFields(db, key, field)
 }
 
-// execHSetNX sets field in hash table only if field not exists
 func execHSetNX(db *DB, args [][]byte) redis.Reply {
-	// parse args
 	key := string(args[0])
 	field := string(args[1])
 	value := args[2]
@@ -77,7 +92,10 @@ func execHSetNX(db *DB, args [][]byte) redis.Reply {
 	result := dict.PutIfAbsent(field, value)
 	if result > 0 {
 		db.addAof(utils.ToCmdLine3("hsetnx", args...))
-
+		if cb := db.hashFieldCallback; cb != nil {
+			cb(db.index, key, field)
+		}
+		reindexHash(key, dict)
 	}
 	return protocol.MakeIntReply(int64(result))
 }
@@ -127,9 +145,7 @@ func execHExists(db *DB, args [][]byte) redis.Reply {
 	return protocol.MakeIntReply(0)
 }
 
-// execHDel deletes a hash field
 func execHDel(db *DB, args [][]byte) redis.Reply {
-	// parse args
 	key := string(args[0])
 	fields := make([]string, len(args)-1)
 	fieldArgs := args[1:]
@@ -137,7 +153,6 @@ func execHDel(db *DB, args [][]byte) redis.Reply {
 		fields[i] = string(v)
 	}
 
-	// get entity
 	dict, errReply := db.getAsDict(key)
 	if errReply != nil {
 		return errReply
@@ -150,9 +165,17 @@ func execHDel(db *DB, args [][]byte) redis.Reply {
 	for _, field := range fields {
 		_, result := dict.Remove(field)
 		deleted += result
+		if result > 0 {
+			if cb := db.hashFieldCallback; cb != nil {
+				cb(db.index, key, field)
+			}
+		}
 	}
 	if dict.Len() == 0 {
+		search.RemoveDocByPrefix(key)
 		db.Remove(key)
+	} else if deleted > 0 {
+		reindexHash(key, dict)
 	}
 	if deleted > 0 {
 		db.addAof(utils.ToCmdLine3("hdel", args...))
@@ -208,9 +231,7 @@ func execHStrlen(db *DB, args [][]byte) redis.Reply {
 	return protocol.MakeIntReply(0)
 }
 
-// execHMSet sets multi fields in hash table
 func execHMSet(db *DB, args [][]byte) redis.Reply {
-	// parse args
 	if len(args)%2 != 1 {
 		return protocol.MakeSyntaxErrReply()
 	}
@@ -223,17 +244,18 @@ func execHMSet(db *DB, args [][]byte) redis.Reply {
 		values[i] = args[2*i+2]
 	}
 
-	// get or init entity
 	dict, _, errReply := db.getOrInitDict(key)
 	if errReply != nil {
 		return errReply
 	}
 
-	// put data
 	for i, field := range fields {
-		value := values[i]
-		dict.Put(field, value)
+		dict.Put(field, values[i])
+		if cb := db.hashFieldCallback; cb != nil {
+			cb(db.index, key, field)
+		}
 	}
+	reindexHash(key, dict)
 	db.addAof(utils.ToCmdLine3("hmset", args...))
 	return &protocol.OkReply{}
 }
@@ -350,7 +372,6 @@ func execHGetAll(db *DB, args [][]byte) redis.Reply {
 	return protocol.MakeMultiBulkReply(result[:i])
 }
 
-// execHIncrBy increments the integer value of a hash field by the given number
 func execHIncrBy(db *DB, args [][]byte) redis.Reply {
 	key := string(args[0])
 	field := string(args[1])
@@ -369,6 +390,10 @@ func execHIncrBy(db *DB, args [][]byte) redis.Reply {
 	if !exists {
 		dict.Put(field, args[2])
 		db.addAof(utils.ToCmdLine3("hincrby", args...))
+		if cb := db.hashFieldCallback; cb != nil {
+			cb(db.index, key, field)
+		}
+		reindexHash(key, dict)
 		return protocol.MakeBulkReply(args[2])
 	}
 	val, err := strconv.ParseInt(string(value.([]byte)), 10, 64)
@@ -379,6 +404,10 @@ func execHIncrBy(db *DB, args [][]byte) redis.Reply {
 	bytes := []byte(strconv.FormatInt(val, 10))
 	dict.Put(field, bytes)
 	db.addAof(utils.ToCmdLine3("hincrby", args...))
+	if cb := db.hashFieldCallback; cb != nil {
+		cb(db.index, key, field)
+	}
+	reindexHash(key, dict)
 	return protocol.MakeBulkReply(bytes)
 }
 
@@ -388,7 +417,6 @@ func undoHIncr(db *DB, args [][]byte) []CmdLine {
 	return rollbackHashFields(db, key, field)
 }
 
-// execHIncrByFloat increments the float value of a hash field by the given number
 func execHIncrByFloat(db *DB, args [][]byte) redis.Reply {
 	key := string(args[0])
 	field := string(args[1])
@@ -398,7 +426,6 @@ func execHIncrByFloat(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply("ERR value is not a valid float")
 	}
 
-	// get or init entity
 	dict, _, errReply := db.getOrInitDict(key)
 	if errReply != nil {
 		return errReply
@@ -408,6 +435,10 @@ func execHIncrByFloat(db *DB, args [][]byte) redis.Reply {
 	if !exists {
 		dict.Put(field, args[2])
 		db.addAof(utils.ToCmdLine3("hincrbyfloat", args...))
+		if cb := db.hashFieldCallback; cb != nil {
+			cb(db.index, key, field)
+		}
+		reindexHash(key, dict)
 		return protocol.MakeBulkReply(args[2])
 	}
 	val, err := strconv.ParseFloat(string(value.([]byte)), 64)
@@ -418,6 +449,10 @@ func execHIncrByFloat(db *DB, args [][]byte) redis.Reply {
 	resultBytes := []byte(strconv.FormatFloat(result, 'f', -1, 64))
 	dict.Put(field, resultBytes)
 	db.addAof(utils.ToCmdLine3("hincrbyfloat", args...))
+	if cb := db.hashFieldCallback; cb != nil {
+		cb(db.index, key, field)
+	}
+	reindexHash(key, dict)
 	return protocol.MakeBulkReply(resultBytes)
 }
 

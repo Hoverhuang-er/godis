@@ -1,6 +1,7 @@
 package aof
 
-import (
+import (	"fmt"
+
 	"context"
 	"io"
 	"os"
@@ -14,11 +15,11 @@ import (
 	"github.com/hdt3213/godis/config"
 
 	"github.com/hdt3213/godis/interface/database"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/redis/connection"
 	"github.com/hdt3213/godis/redis/parser"
 	"github.com/hdt3213/godis/redis/protocol"
+	"log/slog"
 )
 
 // CmdLine is alias for [][]byte, represents a command line
@@ -158,7 +159,7 @@ func (persister *Persister) writeAof(p *payload) {
 		data := protocol.MakeMultiBulkReply(selectCmd).ToBytes()
 		_, err := persister.aofFile.Write(data)
 		if err != nil {
-			logger.Warn(err)
+			slog.Warn(err.Error())
 			return // skip this command
 		}
 		persister.currentDB = p.dbIndex
@@ -168,7 +169,7 @@ func (persister *Persister) writeAof(p *payload) {
 	persister.buffer = append(persister.buffer, p.cmdLine)
 	_, err := persister.aofFile.Write(data)
 	if err != nil {
-		logger.Warn(err)
+		slog.Warn(err.Error())
 	}
 	for listener := range persister.listeners {
 		listener.Callback(persister.buffer)
@@ -193,7 +194,7 @@ func (persister *Persister) LoadAof(maxBytes int) {
 		if _, ok := err.(*os.PathError); ok {
 			return
 		}
-		logger.Warn(err)
+		slog.Warn(err.Error())
 		return
 	}
 	defer file.Close()
@@ -222,21 +223,21 @@ func (persister *Persister) LoadAof(maxBytes int) {
 			if p.Err == io.EOF {
 				break
 			}
-			logger.Error("parse error: " + p.Err.Error())
+			slog.Error("parse error: " + p.Err.Error())
 			continue
 		}
 		if p.Data == nil {
-			logger.Error("empty payload")
+			slog.Error("empty payload")
 			continue
 		}
 		r, ok := p.Data.(*protocol.MultiBulkReply)
 		if !ok {
-			logger.Error("require multi bulk protocol")
+			slog.Error("require multi bulk protocol")
 			continue
 		}
 		ret := persister.db.Exec(fakeConn, r.Args)
 		if protocol.IsErrorReply(ret) {
-			logger.Error("exec err", string(ret.ToBytes()))
+			slog.Error(string(ret.ToBytes()))
 		}
 		if strings.ToLower(string(r.Args[0])) == "select" {
 			// execSelect success, here must be no error
@@ -252,7 +253,7 @@ func (persister *Persister) LoadAof(maxBytes int) {
 func (persister *Persister) Fsync() {
 	persister.pausingAof.Lock()
 	if err := persister.aofFile.Sync(); err != nil {
-		logger.Errorf("fsync failed: %v", err)
+		slog.Error(fmt.Sprintf("fsync failed: %v", err))
 	}
 	persister.pausingAof.Unlock()
 }
@@ -267,7 +268,7 @@ func (persister *Persister) Close() {
 		<-persister.aofFinished // wait for aof finished
 		err := persister.aofFile.Close()
 		if err != nil {
-			logger.Warn(err)
+			slog.Warn(err.Error())
 		}
 	}
 	persister.cancel()

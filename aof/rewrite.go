@@ -6,9 +6,9 @@ import (
 	"strconv"
 
 	"github.com/hdt3213/godis/config"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/redis/protocol"
+	"log/slog"
 )
 
 func (persister *Persister) newRewriteHandler() *Persister {
@@ -45,10 +45,10 @@ func (persister *Persister) Rewrite() error {
 func (persister *Persister) DoRewrite(ctx *RewriteCtx) (err error) {
 	// start rewrite
 	if !config.Properties.AofUseRdbPreamble {
-		logger.Info("generate aof preamble")
+		slog.Info("generate aof preamble")
 		err = persister.generateAof(ctx)
 	} else {
-		logger.Info("generate rdb preamble")
+		slog.Info("generate rdb preamble")
 		err = persister.generateRDB(ctx)
 	}
 	return err
@@ -62,7 +62,7 @@ func (persister *Persister) StartRewrite() (*RewriteCtx, error) {
 
 	err := persister.aofFile.Sync()
 	if err != nil {
-		logger.Warn("fsync failed")
+		slog.Warn("fsync failed")
 		return nil, err
 	}
 
@@ -73,7 +73,7 @@ func (persister *Persister) StartRewrite() (*RewriteCtx, error) {
 	// create tmp file
 	file, err := os.CreateTemp(config.GetTmpDir(), "*.aof")
 	if err != nil {
-		logger.Warn("tmp file create failed")
+		slog.Warn("tmp file create failed")
 		return nil, err
 	}
 	return &RewriteCtx{
@@ -94,7 +94,7 @@ func (persister *Persister) FinishRewrite(ctx *RewriteCtx) {
 		/* read write commands executed during rewriting */
 		src, err := os.Open(persister.aofFilename)
 		if err != nil {
-			logger.Error("open aofFilename failed: " + err.Error())
+			slog.Error("open aofFilename failed: " + err.Error())
 			return true
 		}
 		defer func() {
@@ -104,20 +104,20 @@ func (persister *Persister) FinishRewrite(ctx *RewriteCtx) {
 
 		_, err = src.Seek(ctx.fileSize, 0)
 		if err != nil {
-			logger.Error("seek failed: " + err.Error())
+			slog.Error("seek failed: " + err.Error())
 			return true
 		}
 		// sync tmpFile's db index with online aofFile
 		data := protocol.MakeMultiBulkReply(utils.ToCmdLine("SELECT", strconv.Itoa(ctx.dbIdx))).ToBytes()
 		_, err = tmpFile.Write(data)
 		if err != nil {
-			logger.Error("tmp file rewrite failed: " + err.Error())
+			slog.Error("tmp file rewrite failed: " + err.Error())
 			return true
 		}
 		// copy data
 		_, err = io.Copy(tmpFile, src)
 		if err != nil {
-			logger.Error("copy aof filed failed: " + err.Error())
+			slog.Error("copy aof filed failed: " + err.Error())
 			return true
 		}
 		return false
@@ -129,7 +129,7 @@ func (persister *Persister) FinishRewrite(ctx *RewriteCtx) {
 	// replace current aof file by tmp file
 	_ = persister.aofFile.Close()
 	if err := os.Rename(tmpFile.Name(), persister.aofFilename); err != nil {
-		logger.Warn(err)
+		slog.Warn(err.Error())
 	}
 	// reopen aof file for further write
 	aofFile, err := os.OpenFile(persister.aofFilename, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0600)

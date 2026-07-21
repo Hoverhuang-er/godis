@@ -8,9 +8,9 @@ import (
 	"github.com/hdt3213/godis/datastruct/dict"
 	"github.com/hdt3213/godis/interface/database"
 	"github.com/hdt3213/godis/interface/redis"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/timewheel"
 	"github.com/hdt3213/godis/redis/protocol"
+	"log/slog"
 )
 
 const (
@@ -32,8 +32,9 @@ type DB struct {
 	addAof func(CmdLine)
 
 	// callbacks
-	insertCallback database.KeyEventCallback
-	deleteCallback database.KeyEventCallback
+	insertCallback       database.KeyEventCallback
+	deleteCallback       database.KeyEventCallback
+	hashFieldCallback database.HashFieldChangeCallback
 }
 
 // ExecFunc is interface for command executor
@@ -251,7 +252,7 @@ func (db *DB) Expire(key string, expireTime time.Time) {
 		db.RWLocks(keys, nil)
 		defer db.RWUnLocks(keys, nil)
 		// check-lock-check, ttl may be updated during waiting lock
-		logger.Info("expire " + key)
+		slog.Info("expire " + key)
 		rawExpireTime, ok := db.ttlMap.Get(key)
 		if !ok {
 			return

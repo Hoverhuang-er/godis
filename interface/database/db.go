@@ -21,6 +21,10 @@ type DB interface {
 // may be called concurrently
 type KeyEventCallback func(dbIndex int, key string, entity *DataEntity)
 
+// HashFieldChangeCallback will be called back when a hash field is changed
+// may be called concurrently
+type HashFieldChangeCallback func(dbIndex int, key string, field string)
+
 // DBEngine is the embedding storage engine exposing more methods for complex application
 type DBEngine interface {
 	DB
