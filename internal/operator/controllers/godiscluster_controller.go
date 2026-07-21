@@ -6,6 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -226,7 +227,11 @@ func (r *GodisClusterReconciler) reconcileService(ctx context.Context, cluster *
 func (r *GodisClusterReconciler) reconcileStatefulSet(ctx context.Context, cluster *godisv1.GodisCluster, cm *corev1.ConfigMap) (*appsv1.StatefulSet, error) {
 	replicas := cluster.Spec.Replicas
 	if replicas == 0 {
-		replicas = 1
+		if cluster.Spec.Mode == "cluster" {
+			replicas = 3
+		} else {
+			replicas = 1
+		}
 	}
 
 	image := cluster.Spec.Image
@@ -249,6 +254,31 @@ func (r *GodisClusterReconciler) reconcileStatefulSet(ctx context.Context, clust
 		"app.kubernetes.io/instance": cluster.Name,
 	}
 
+	// Default resources: 0.5 CPU, 1Gi memory
+	resources := cluster.Spec.Resources
+	if resources.Requests == nil && resources.Limits == nil {
+		resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("500m"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1000m"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+		}
+	}
+
+	// Autoscaling annotations for VPA and KEDA
+	annotations := map[string]string{}
+	if cluster.Spec.Autoscaling != nil && cluster.Spec.Autoscaling.EnableVPA {
+		annotations["vpa.godis.Hoverhuang-er.io/enabled"] = "true"
+	}
+	if cluster.Spec.Autoscaling != nil && cluster.Spec.Autoscaling.EnableKEDA {
+		annotations["keda.godis.Hoverhuang-er.io/enabled"] = "true"
+		annotations["keda.godis.Hoverhuang-er.io/scalingStrategy"] = "default"
+	}
+
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name,
@@ -257,11 +287,22 @@ func (r *GodisClusterReconciler) reconcileStatefulSet(ctx context.Context, clust
 	}
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sts, func() error {
+		if sts.CreationTimestamp.IsZero() {
+			sts.Annotations = annotations
+		}
 		sts.Labels = labels
 		sts.Spec.ServiceName = cluster.Name
 		sts.Spec.Replicas = &replicas
 		sts.Spec.Selector = &metav1.LabelSelector{MatchLabels: labels}
 		sts.Spec.Template.ObjectMeta.Labels = labels
+		if len(annotations) > 0 {
+			if sts.Spec.Template.Annotations == nil {
+				sts.Spec.Template.Annotations = make(map[string]string)
+			}
+			for k, v := range annotations {
+				sts.Spec.Template.Annotations[k] = v
+			}
+		}
 
 		container := corev1.Container{
 			Name:            "godis",
@@ -276,7 +317,7 @@ func (r *GodisClusterReconciler) reconcileStatefulSet(ctx context.Context, clust
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "config", MountPath: "/etc/godis", ReadOnly: true},
 			},
-			Resources: cluster.Spec.Resources,
+			Resources: resources,
 		}
 
 		if cluster.Spec.Mode == "cluster" {

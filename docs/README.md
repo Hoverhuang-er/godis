@@ -36,42 +36,156 @@ Key Features:
 
 If you could read Chinese, you can find more details in [My Blog](https://www.cnblogs.com/Finley/category/1598973.html).
 
-## Get Started
+## Quick Start
 
-You can get runnable program in the releases of this repository, which supports Linux and Darwin system.
+### Standalone (Linux / macOS)
 
 ```bash
-./godis-darwin
+# Download the binary from GitHub Releases
+curl -LO https://github.com/Hoverhuang-er/godis/releases/download/v1.3.1/godis_linux_amd64.zip
+unzip godis_linux_amd64.zip
+
+# Run with minimal config
+CONFIG=config/standalone.toml ./godis
+
+# Or use the default auto-detection (looks for standalone.toml in cwd)
+./godis
 ```
 
-```bash
-./godis-linux
+### Standalone (Windows)
+
+```powershell
+# Download godis_windows_amd64.zip from Releases, extract
+# Run in PowerShell:
+$env:CONFIG="config\standalone.toml"
+.\godis.exe
 ```
 
-![](https://i.loli.net/2021/05/15/oQM1yZ6pWm3AIEj.png)
-
-The program will try to read config file path from environment variable `CONFIG`.
-
-If environment variable is not set, then the program tries to read `standalone.toml` (or `redis.conf`) in the working directory.
-
-Please see [standalone.toml](./standalone.toml) and [example.conf](./example.conf) for all configuration information.
-
-### cluster mode
-
-We provide node1.conf and node2.conf for demonstration. use following command line to start a two-node-cluster:
+### Docker Compose (Minimal)
 
 ```bash
-CONFIG=node1.conf ./godis-darwin &
-CONFIG=node2.conf ./godis-darwin &
-``` 
+git clone https://github.com/Hoverhuang-er/godis.git
+cd godis
+docker compose up -d
+redis-cli -p 6399 PING
+```
 
-Connect to a node in the cluster to access all data in the cluster:
+Minimal `docker-compose.yml`:
 
-```cmd
+```yaml
+services:
+  godis:
+    image: ghcr.io/Hoverhuang-er/godis:latest
+    ports:
+      - "6399:6399"
+    volumes:
+      - godis-data:/data
+      - ./config/standalone.toml:/etc/godis/standalone.toml:ro
+    environment:
+      - CONFIG=/etc/godis/standalone.toml
+    restart: unless-stopped
+
+volumes:
+  godis-data:
+```
+
+### Docker (Single Container)
+
+```bash
+docker run -d --name godis \
+  -p 6399:6399 \
+  -v godis-data:/data \
+  ghcr.io/Hoverhuang-er/godis:latest
+```
+
+### Cluster Mode (Multi-Node)
+
+```bash
+# Start a 3-node cluster
+CONFIG=config/cluster.toml ./godis &
+```
+
+Connect to any node to access the full dataset:
+
+```bash
 redis-cli -p 6399
 ```
 
-Please refer to [example.conf](./example.conf) for cluster configuration.
+## Kubernetes Deployment
+
+### Helm Chart (Recommended)
+
+For production deployments, use the Helm chart:
+
+```bash
+# Add repository and install
+helm pull oci://ghcr.io/Hoverhuang-er/godis/charts/godis --version 1.3.1
+helm install godis ./godis-1.3.1.tgz
+
+# Or install directly
+helm install godis oci://ghcr.io/Hoverhuang-er/godis/charts/godis --version 1.3.1
+
+# Cluster mode (3 nodes)
+helm install godis-cluster oci://ghcr.io/Hoverhuang-er/godis/charts/godis --version 1.3.1 \
+  --set mode=cluster --set replicaCount=3
+```
+
+See [charts/godis/values.yaml](https://github.com/Hoverhuang-er/godis/blob/main/charts/godis/values.yaml) for all configuration options.
+
+### Kubernetes Operator
+
+The Godis Operator manages GodisCluster custom resources. Deploy with:
+
+```bash
+# Install CRD
+kubectl apply -f https://raw.githubusercontent.com/Hoverhuang-er/godis/main/config/crd/godisclusters.yaml
+
+# Deploy operator (default: 3 nodes, 0.5 CPU / 1Gi memory per node)
+kubectl create deployment godis-operator --image=ghcr.io/Hoverhuang-er/godis/operator:1.3.1
+
+# Create a Godis cluster (standalone)
+kubectl apply -f - <<EOF
+apiVersion: godis.Hoverhuang-er.io/v1
+kind: GodisCluster
+metadata:
+  name: my-godis
+spec:
+  mode: standalone
+  port: 6399
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+EOF
+```
+
+#### Autoscaling
+
+The operator supports HPA, VPA, and KEDA:
+
+```yaml
+apiVersion: godis.Hoverhuang-er.io/v1
+kind: GodisCluster
+metadata:
+  name: my-godis-cluster
+spec:
+  mode: cluster
+  replicas: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    enableVPA: true
+    enableKEDA: true
+```
+
+Supported Kubernetes versions: **1.34–1.36** and **k3s** (any supported version).
 
 ## Rueidis Client Example
 

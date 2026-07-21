@@ -12,7 +12,8 @@ type GodisClusterSpec struct {
 	Mode string `json:"mode,omitempty"`
 
 	// Replicas is the number of godis instances (only used in cluster mode)
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
+	// Default: 3
 	Replicas int32 `json:"replicas,omitempty"`
 
 	// Port is the Redis service port
@@ -35,7 +36,7 @@ type GodisClusterSpec struct {
 	// Config overrides for standalone.toml
 	Config *GodisConfig `json:"config,omitempty"`
 
-	// Resources for the godis container
+	// Resources for the godis container (default: 0.5 CPU, 1Gi memory)
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Storage configures persistent storage
@@ -49,6 +50,41 @@ type GodisClusterSpec struct {
 
 	// Tolerations for pod scheduling
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+
+	// Autoscaling configures HPA/VPA/KEDA-based scaling
+	Autoscaling *AutoscalingSpec `json:"autoscaling,omitempty"`
+}
+
+type AutoscalingSpec struct {
+	// Enabled enables horizontal pod autoscaling
+	Enabled bool `json:"enabled,omitempty"`
+
+	// MinReplicas is the minimum number of replicas
+	// +kubebuilder:validation:Minimum=1
+	MinReplicas int32 `json:"minReplicas,omitempty"`
+
+	// MaxReplicas is the maximum number of replicas
+	// +kubebuilder:validation:Minimum=1
+	MaxReplicas int32 `json:"maxReplicas,omitempty"`
+
+	// TargetCPUUtilizationPercentage is the target CPU utilization for HPA
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	TargetCPUUtilizationPercentage int32 `json:"targetCPUUtilizationPercentage,omitempty"`
+
+	// TargetMemoryUtilizationPercentage is the target memory utilization for HPA/VPA
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	TargetMemoryUtilizationPercentage int32 `json:"targetMemoryUtilizationPercentage,omitempty"`
+
+	// EnableVPA enables Vertical Pod Autoscaling
+	EnableVPA bool `json:"enableVPA,omitempty"`
+
+	// EnableKEDA enables KEDA ScaledObject integration
+	EnableKEDA bool `json:"enableKEDA,omitempty"`
+
+	// KEDACooldownSeconds is the cooldown period for KEDA scaling
+	KEDACooldownSeconds int32 `json:"kedaCooldownSeconds,omitempty"`
 }
 
 // GodisConfig holds godis configuration overrides.

@@ -1,34 +1,24 @@
-# Changelog
+# Godis Changelog
 
-## v1.3.1 (2026-07-21)
-
-### Features
-- TOML configuration format support (standalone.toml, cluster.toml)
-- Nacos configuration center integration via nacos-go-sdk
-- Redis 8.8.0 command compatibility
-- RediSearch support (FT.CREATE, FT.SEARCH, FT.DROPINDEX, etc.)
-- Time Series support (TS.CREATE, TS.ADD, TS.GET, TS.RANGE)
-- Redis-Vector support (VECTOR field type, KNN search)
-- Arena memory management for reduced GC pressure
-- Compatible with rueidis and go-redis clients
-
-### Improvements
-- Configuration loading refactored with format auto-detection
-- Multiple config sources supported (local file, Nacos)
-- Cross-platform release packages include standalone.toml
-- CI/CD pipeline with GitHub Actions for tests and releases
-
-## v1.3.0 (2026-07-14)
+## v1.3.1 (2026-07-22)
 
 ### Features
-- RESP3 protocol support
-- Array data type (AR* commands)
-- INCREX rate limiter
-- ZUNION/ZINTER with COUNT
-- Hash field-level notifications
-- Streams with XNACK
-- Compatible with go-redis
+- feat: add Helm chart, K8s operator, multi-arch Docker images
+- feat(release): build and push multi-arch Docker image to GHCR
 
 ### Improvements
-- Performance optimizations
-- Memory usage improvements
+- refactor: restructure project to Go Project Layout
+- cleanup: remove legacy .conf, merge build scripts into Makefile
+- chore: rename module to github.com/Hoverhuang-er/godis
+
+### Fixes
+- fix: add riscv64 support to boltdb/bolt via local patch
+- fix(release): remove unsupported windows/riscv64 and darwin/riscv64 targets
+- fix(release): partial build failure does not block release
+- fix(release): upload-checksums job indentation
+- fix(release): add packages: write permission for GHCR push
+- Fix test.yml: add GOEXPERIMENT=jsonv2 at step level
+
+### Previous Releases
+
+See git log for detailed history.

@@ -190,9 +190,22 @@ jobs:
           find . -name '*.zip' -exec shasum -a 256 {} \; > checksums.txt
           cat checksums.txt
 
-      - name: Prepare Release Notes
+      - name: Generate Release Changelog
         run: |
-          cp docs/CHANGELOGS.md CHANGELOGS-latest.md
+          echo "## godis ${{ github.ref_name }}" > CHANGELOGS-latest.md
+          echo "" >> CHANGELOGS-latest.md
+          if [ -f docs/CHANGELOGS.md ]; then
+            cat docs/CHANGELOGS.md >> CHANGELOGS-latest.md
+          else
+            # Generate changelog from git log
+            prev_tag=$(git tag --sort=-creatordate | head -2 | tail -1)
+            echo "Changes since ${prev_tag}:" >> CHANGELOGS-latest.md
+            echo "" >> CHANGELOGS-latest.md
+            git log --oneline --no-decorate ${prev_tag}..HEAD 2>/dev/null \
+              | sed 's/^/- /' >> CHANGELOGS-latest.md || true
+          fi
+          echo "" >> CHANGELOGS-latest.md
+          cat CHANGELOGS-latest.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

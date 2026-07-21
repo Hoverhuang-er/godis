@@ -163,3 +163,18 @@ func (in *StorageSpec) DeepCopy() *StorageSpec {
 	in.DeepCopyInto(out)
 	return out
 }
+
+// DeepCopyInto copies all properties into another AutoscalingSpec.
+func (in *AutoscalingSpec) DeepCopyInto(out *AutoscalingSpec) {
+	*out = *in
+}
+
+// DeepCopy creates a deep copy of AutoscalingSpec.
+func (in *AutoscalingSpec) DeepCopy() *AutoscalingSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(AutoscalingSpec)
+	in.DeepCopyInto(out)
+	return out
+}
