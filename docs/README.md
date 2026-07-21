@@ -111,6 +111,32 @@ Connect to any node to access the full dataset:
 redis-cli -p 6399
 ```
 
+### Prometheus Monitoring
+
+Godis exposes Prometheus-compatible metrics at `/metrics` on port `9121` (configurable via `monitoring.prometheus_port` in `standalone.toml`). Metrics are **enabled by default** and follow `redis_exporter` naming conventions for compatibility with existing Redis dashboards.
+
+```bash
+# Scrape endpoint (default)
+curl http://localhost:9121/metrics
+```
+
+**Key metrics exposed:**
+- `godis_connected_clients` — current active connections
+- `godis_commands_total` — total commands processed
+- `godis_keyspace_hits_total` / `godis_keyspace_misses_total` — cache hit/miss counters
+- `godis_db_keys` — per-database key counts
+- `godis_db_avg_ttl_seconds` — average TTL per database
+- `godis_slowlog_length` — slow log queue length
+- Hot key and big key detection (periodically sampled)
+
+To disable metrics, set `prometheus_enabled = false` in the `[monitoring]` section of your config. All monitoring config changes are hot-reloaded at runtime.
+
+```toml
+[monitoring]
+prometheus_enabled = true
+prometheus_port = 9121
+```
+
 ## Kubernetes Deployment
 
 ### Helm Chart (Recommended)

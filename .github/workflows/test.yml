@@ -60,9 +60,17 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
+      - name: Cache Go build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: ${{ runner.os }}-go-build-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-build-
       - name: Run tests
         env:
-          GOEXPERIMENT: jsonv2
+          GOEXPERIMENT: jsonv2,greenteagc
+          GOAMD64: v3
         run: |
           pkg="./internal/${{ matrix.pkg }}/..."
           echo "Testing: $pkg"

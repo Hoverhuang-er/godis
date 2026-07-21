@@ -1,24 +1,23 @@
 package config
 
 import (
-	"io"
+	_ "embed"
 	"net"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/fsnotify/fsnotify"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients"
+	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
-
+	"github.com/spf13/viper"
 	"log/slog"
 )
-
 var (
 	ClusterMode    = "cluster"
 	StandaloneMode = "standalone"
@@ -82,7 +81,7 @@ func (p *ServerProperties) RaftAnnounceAddress() string {
 	if p.RaftAdvertiseAddr != "" {
 		return p.RaftAdvertiseAddr
 	}
-	return ""
+	return p.RaftListenAddr
 }
 
 var Properties *ServerProperties
@@ -90,19 +89,25 @@ var EachTimeServerInfo *ServerInfo
 
 func init() {
 	Properties = &ServerProperties{
-		Bind:              "127.0.0.1",
-		Port:              6379,
-		AppendOnly:        false,
-		AppendFilename:    "",
-		MaxClients:        1000,
+		Bind:              "0.0.0.0",
+		Port:              6399,
+		MaxClients:        128,
 		Databases:         16,
-		RunID:             utils.RandString(40),
+		AppendFsync:       "everysec",
+		AofUseRdbPreamble: true,
 		SlowLogSlowerThan: 10000,
 		SlowLogMaxLen:     128,
+		PrometheusEnabled: true,
+		PrometheusPort:    9121,
 	}
+	EachTimeServerInfo = &ServerInfo{}
 }
 
-// SetupConfig loads configuration from the given TOML-format file.
+//go:embed default.toml
+var defaultConfigContent string
+
+// SetupConfig loads configuration from the given TOML file using viper.
+// Supports hot-reload: changes to the config file are picked up automatically.
 func SetupConfig(configFilename string) {
 	Properties.RunID = utils.RandString(40)
 
@@ -113,32 +118,106 @@ func SetupConfig(configFilename string) {
 	}
 	configFilePath = absPath
 
-	loadTomlConfig(configFilename)
+	v := viper.New()
+	v.SetConfigFile(configFilename)
 
+	if err := v.ReadInConfig(); err != nil {
+		slog.Warn("failed to read config file, using defaults", "path", configFilename, "error", err)
+		return
+	}
+
+	populateFromViper(v)
+
+
+	// Hot-reload: watch config file for changes
+	v.WatchConfig()
+	v.OnConfigChange(func(in fsnotify.Event) {
+		slog.Info("config file changed, reloading", "path", in.Name)
+		populateFromViper(v)
+	})
+}
+
+func populateFromViper(v *viper.Viper) {
+	Properties.ConfigMode = v.GetString("config_mode")
+	Properties.Bind = getStr(v, "server.bind", Properties.Bind)
+	Properties.Port = getInt(v, "server.port", Properties.Port)
+	Properties.Dir = getStr(v, "server.dir", Properties.Dir)
 	if Properties.Dir == "" {
 		Properties.Dir = "."
 	}
+	Properties.AnnounceHost = getStr(v, "server.announce_host", Properties.AnnounceHost)
+	Properties.MaxClients = getInt(v, "server.maxclients", Properties.MaxClients)
+	Properties.Databases = getInt(v, "server.databases", Properties.Databases)
+	Properties.UseGnet = getBool(v, "server.use_gnet", Properties.UseGnet)
+
+	Properties.AppendOnly = getBool(v, "aof.appendonly", Properties.AppendOnly)
+	Properties.AppendFilename = getStr(v, "aof.appendfilename", Properties.AppendFilename)
+	Properties.AppendFsync = getStr(v, "aof.appendfsync", Properties.AppendFsync)
+	Properties.AofUseRdbPreamble = getBool(v, "aof.aof_use_rdb_preamble", Properties.AofUseRdbPreamble)
+	Properties.RDBFilename = getStr(v, "aof.dbfilename", Properties.RDBFilename)
+
+	Properties.RequirePass = getStr(v, "security.requirepass", Properties.RequirePass)
+	Properties.MasterAuth = getStr(v, "security.masterauth", Properties.MasterAuth)
+
+	Properties.AnnounceHost = getStr(v, "replication.announce_host", Properties.AnnounceHost)
+	Properties.SlaveAnnouncePort = getInt(v, "replication.slave_announce_port", Properties.SlaveAnnouncePort)
+	Properties.ReplTimeout = getInt(v, "replication.repl_timeout", Properties.ReplTimeout)
+
+	Properties.SlowLogSlowerThan = int64(getInt(v, "slowlog.log_slower_than", int(Properties.SlowLogSlowerThan)))
+	Properties.SlowLogMaxLen = getInt(v, "slowlog.max_len", Properties.SlowLogMaxLen)
+
+	Properties.ClusterEnable = getBool(v, "cluster.enable", Properties.ClusterEnable)
+	Properties.ClusterAsSeed = getBool(v, "cluster.as_seed", Properties.ClusterAsSeed)
+	Properties.ClusterSeed = getStr(v, "cluster.seed", Properties.ClusterSeed)
+	Properties.RaftListenAddr = getStr(v, "cluster.raft_listen_address", Properties.RaftListenAddr)
+	Properties.RaftAdvertiseAddr = getStr(v, "cluster.raft_advertise_address", Properties.RaftAdvertiseAddr)
+	Properties.MasterInCluster = getStr(v, "cluster.master_in_cluster", Properties.MasterInCluster)
+
+	Properties.PrometheusEnabled = getBool(v, "monitoring.prometheus_enabled", Properties.PrometheusEnabled)
+	Properties.PrometheusPort = getInt(v, "monitoring.prometheus_port", Properties.PrometheusPort)
+}
+
+func getStr(v *viper.Viper, key, def string) string {
+	if v.IsSet(key) {
+		return v.GetString(key)
+	}
+	return def
+}
+
+func getInt(v *viper.Viper, key string, def int) int {
+	if v.IsSet(key) {
+		return v.GetInt(key)
+	}
+	return def
+}
+
+func getBool(v *viper.Viper, key string, def bool) bool {
+	if v.IsSet(key) {
+		return v.GetBool(key)
+	}
+	return def
 }
 
 // SetupConfigFromNacos loads configuration from Nacos config center.
 func SetupConfigFromNacos(addr, namespaceId, group, dataId string) {
 	Properties.RunID = utils.RandString(40)
 
-	sc := []constant.ServerConfig{
-		*constant.NewServerConfig(addr, 8848),
+	clientConfig := constant.ClientConfig{
+		NamespaceId:         namespaceId,
+		TimeoutMs:           5000,
+		NotLoadCacheAtStart: true,
+		LogDir:              "/tmp/nacos/log",
+		CacheDir:            "/tmp/nacos/cache",
+		LogLevel:            "warn",
 	}
-	cc := *constant.NewClientConfig(
-		constant.WithNamespaceId(namespaceId),
-		constant.WithTimeoutMs(5000),
-		constant.WithNotLoadCacheAtStart(true),
-	)
+	serverConfigs := []constant.ServerConfig{
+		{IpAddr: addr, Port: 8848},
+	}
 
-	configClient, err := clients.NewConfigClient(
-		vo.NacosClientParam{
-			ClientConfig:  &cc,
-			ServerConfigs: sc,
-		},
-	)
+	configClient, err := clients.CreateConfigClient(map[string]interface{}{
+		"serverConfigs": serverConfigs,
+		"clientConfig":  clientConfig,
+	})
 	if err != nil {
 		slog.Error("failed to create nacos config client", "error", err)
 		return
@@ -149,211 +228,50 @@ func SetupConfigFromNacos(addr, namespaceId, group, dataId string) {
 		Group:  group,
 	})
 	if err != nil {
-		slog.Error("failed to get config from nacos", "error", err)
+		slog.Error("failed to get nacos config", "error", err)
 		return
 	}
-
 	parseTomlContent(content)
-	slog.Info("loaded config from nacos", "addr", addr, "dataId", dataId, "group", group)
+	loadNacosDynamicConfig(configClient, dataId, group)
+}
+func loadNacosDynamicConfig(client config_client.IConfigClient, dataId, group string) {
+	// Watch for config changes from Nacos
+	err := client.ListenConfig(vo.ConfigParam{
+		DataId: dataId,
+		Group:  group,
+		OnChange: func(namespace, group, dataId, data string) {
+			slog.Info("nacos config changed, reloading")
+			parseTomlContent(data)
+		},
+	})
+	if err != nil {
+		slog.Error("failed to listen nacos config", "error", err)
+	}
 }
 
-func loadTomlConfig(filename string) {
-	f, err := os.Open(filename)
-	if err != nil {
-		slog.Warn("config file not found, using defaults", "path", filename)
-		return
-	}
-	defer f.Close()
-
-	var buf strings.Builder
-	_, err = io.Copy(&buf, f)
-	if err != nil {
-		slog.Error("failed to read config file", "error", err)
-		return
-	}
-
-	parseTomlContent(buf.String())
-}
-
-// parseTomlContent parses TOML content into Properties.
 func parseTomlContent(content string) {
-	var flatMap map[string]interface{}
-	_, err := toml.Decode(content, &flatMap)
-	if err == nil {
-		applyTomlFlat(flatMap)
+	flatMap := make(map[string]interface{})
+	err := toml.Unmarshal([]byte(content), &flatMap)
+	if err != nil {
+		slog.Error("failed to parse toml content", "error", err)
+		return
 	}
-
-	type tomlServer struct {
-		Bind       string `toml:"bind"`
-		Dir        string `toml:"dir"`
-		Port       int    `toml:"port"`
-		MaxClients int    `toml:"maxclients"`
-		Databases  int    `toml:"databases"`
-		UseGnet    bool   `toml:"use_gnet"`
-	}
-	type tomlAOF struct {
-		AppendOnly        bool   `toml:"appendonly"`
-		AppendFilename    string `toml:"appendfilename"`
-		AppendFsync       string `toml:"appendfsync"`
-		AofUseRdbPreamble bool   `toml:"aof_use_rdb_preamble"`
-		RDBFilename       string `toml:"dbfilename"`
-	}
-	type tomlSecurity struct {
-		RequirePass string `toml:"requirepass"`
-		MasterAuth  string `toml:"masterauth"`
-	}
-	type tomlReplication struct {
-		SlaveAnnounceIP   string `toml:"slave_announce_ip"`
-		SlaveAnnouncePort int    `toml:"slave_announce_port"`
-		ReplTimeout       int    `toml:"repl_timeout"`
-		AnnounceHost      string `toml:"announce_host"`
-	}
-	type tomlSlowLog struct {
-		SlowerThan int64 `toml:"log_slower_than"`
-		MaxLen     int   `toml:"max_len"`
-	}
-	type tomlCluster struct {
-		Enable            bool   `toml:"enable"`
-		AsSeed            bool   `toml:"as_seed"`
-		Seed              string `toml:"seed"`
-		RaftListenAddr    string `toml:"raft_listen_address"`
-		RaftAdvertiseAddr string `toml:"raft_advertise_address"`
-		MasterInCluster   string `toml:"master_in_cluster"`
-	}
-	type tomlConfig struct {
-		ConfigMode  string           `toml:"config_mode"`
-		Server      tomlServer       `toml:"server"`
-		AOF         tomlAOF          `toml:"aof"`
-		Security    tomlSecurity     `toml:"security"`
-		Replication tomlReplication  `toml:"replication"`
-		SlowLog     tomlSlowLog      `toml:"slowlog"`
-		Cluster     tomlCluster      `toml:"cluster"`
-	}
-
-	var cfg tomlConfig
-	if _, err := toml.Decode(content, &cfg); err == nil {
-		if cfg.Server.Bind != "" {
-			Properties.Bind = cfg.Server.Bind
-		}
-		if cfg.Server.Port != 0 {
-			Properties.Port = cfg.Server.Port
-		}
-		if cfg.Server.Dir != "" {
-			Properties.Dir = cfg.Server.Dir
-		}
-		if cfg.Server.MaxClients != 0 {
-			Properties.MaxClients = cfg.Server.MaxClients
-		}
-		if cfg.Server.Databases != 0 {
-			Properties.Databases = cfg.Server.Databases
-		}
-		Properties.UseGnet = cfg.Server.UseGnet
-
-		Properties.AppendOnly = cfg.AOF.AppendOnly
-		if cfg.AOF.AppendFilename != "" {
-			Properties.AppendFilename = cfg.AOF.AppendFilename
-		}
-		if cfg.AOF.AppendFsync != "" {
-			Properties.AppendFsync = cfg.AOF.AppendFsync
-		}
-		Properties.AofUseRdbPreamble = cfg.AOF.AofUseRdbPreamble
-		if cfg.AOF.RDBFilename != "" {
-			Properties.RDBFilename = cfg.AOF.RDBFilename
-		}
-
-		if cfg.Security.RequirePass != "" {
-			Properties.RequirePass = cfg.Security.RequirePass
-		}
-		if cfg.Security.MasterAuth != "" {
-			Properties.MasterAuth = cfg.Security.MasterAuth
-		}
-
-		if cfg.Replication.SlaveAnnounceIP != "" {
-			Properties.SlaveAnnounceIP = cfg.Replication.SlaveAnnounceIP
-		}
-		if cfg.Replication.SlaveAnnouncePort != 0 {
-			Properties.SlaveAnnouncePort = cfg.Replication.SlaveAnnouncePort
-		}
-		if cfg.Replication.ReplTimeout != 0 {
-			Properties.ReplTimeout = cfg.Replication.ReplTimeout
-		}
-		if cfg.Replication.AnnounceHost != "" {
-			Properties.AnnounceHost = cfg.Replication.AnnounceHost
-		}
-
-		if cfg.SlowLog.SlowerThan != 0 {
-			Properties.SlowLogSlowerThan = cfg.SlowLog.SlowerThan
-		}
-		if cfg.SlowLog.MaxLen != 0 {
-			Properties.SlowLogMaxLen = cfg.SlowLog.MaxLen
-		}
-
-		Properties.ClusterEnable = cfg.Cluster.Enable
-		Properties.ClusterAsSeed = cfg.Cluster.AsSeed
-		if cfg.Cluster.Seed != "" {
-			Properties.ClusterSeed = cfg.Cluster.Seed
-		}
-		if cfg.Cluster.RaftListenAddr != "" {
-			Properties.RaftListenAddr = cfg.Cluster.RaftListenAddr
-		}
-		if cfg.Cluster.RaftAdvertiseAddr != "" {
-			Properties.RaftAdvertiseAddr = cfg.Cluster.RaftAdvertiseAddr
-		}
-		if cfg.Cluster.MasterInCluster != "" {
-			Properties.MasterInCluster = cfg.Cluster.MasterInCluster
-		}
-
-		if cfg.ConfigMode != "" {
-			Properties.ConfigMode = cfg.ConfigMode
-		}
-	}
-
-	if Properties.ConfigMode == "" {
-		if Properties.ClusterEnable {
-			Properties.ConfigMode = ClusterMode
-		} else {
-			Properties.ConfigMode = StandaloneMode
-		}
-	}
+	applyTomlFlat(flatMap)
 }
 
 func applyTomlFlat(flatMap map[string]interface{}) {
-	t := reflect.TypeOf(Properties).Elem()
-	v := reflect.ValueOf(Properties).Elem()
-	n := t.NumField()
-	for i := range n {
-		field := t.Field(i)
-		fieldVal := v.Field(i)
-		key, ok := field.Tag.Lookup("toml")
-		if !ok || key == "" || key == "-" {
-			continue
-		}
-		raw, ok := flatMap[key]
-		if !ok {
-			continue
-		}
-		switch field.Type.Kind() {
-		case reflect.String:
-			if s, ok := raw.(string); ok {
-				fieldVal.SetString(s)
-			}
-		case reflect.Int, reflect.Int64:
-			switch r := raw.(type) {
-			case int64:
-				fieldVal.SetInt(r)
-			case float64:
-				fieldVal.SetInt(int64(r))
-			}
-		case reflect.Bool:
-			if b, ok := raw.(bool); ok {
-				fieldVal.SetBool(b)
-			}
-		}
+	v := viper.New()
+	for k, val := range flatMap {
+		v.Set(k, val)
 	}
+	populateFromViper(v)
 }
 
-
+// GetTmpDir returns the temporary directory for godis.
 func GetTmpDir() string {
+	if Properties.Dir == "" {
+		return "/tmp"
+	}
 	return Properties.Dir + "/tmp"
 }
 
@@ -362,6 +280,8 @@ func GetTmpDir() string {
 //  1. CONFIG env var (explicit path)
 //  2. standalone.toml (standalone mode)
 //  3. cluster.toml (cluster mode)
+//
+// If none found, writes a default standalone.toml to the working directory.
 func DetectConfigFile() (string, bool) {
 	configFile := os.Getenv("CONFIG")
 	if configFile != "" {
@@ -373,5 +293,12 @@ func DetectConfigFile() (string, bool) {
 			return candidate, true
 		}
 	}
-	return "", false
+
+	// No config file found: write default standalone.toml
+	if err := os.WriteFile("standalone.toml", []byte(defaultConfigContent), 0644); err != nil {
+		slog.Warn("failed to write default config", "error", err)
+		return "", false
+	}
+	slog.Info("wrote default standalone.toml, loading it")
+	return "standalone.toml", true
 }

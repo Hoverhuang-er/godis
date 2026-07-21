@@ -9,14 +9,14 @@ WORKDIR /build
 COPY go.mod go.sum ./
 COPY patches/ ./patches/
 RUN --mount=type=cache,target=/go/pkg/mod \
-    GOEXPERIMENT=jsonv2 go mod download
+    GOEXPERIMENT=jsonv2,greenteagc go mod download
 
 # Build godis binary
 COPY . .
 ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    GOEXPERIMENT=jsonv2 CGO_ENABLED=0 \
+    GOEXPERIMENT=jsonv2,greenteagc CGO_ENABLED=0 GOAMD64=v3 \
     GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -tags greenteagc -ldflags="-s -w" -o godis ./cmd/godis/
 

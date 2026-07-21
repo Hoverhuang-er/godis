@@ -65,6 +65,32 @@ redis-cli -p 6399
 
 更多配置请查阅 [example.conf](./example.conf)
 
+## Prometheus 监控
+
+Godis 默认启用 Prometheus 兼容的指标端点，监听端口 `9121`（可通过 `standalone.toml` 中的 `monitoring.prometheus_port` 配置），路径为 `/metrics`。指标命名兼容 `redis_exporter`，可直接对接现有 Redis 监控面板。
+
+```bash
+# 默认指标抓取地址
+curl http://localhost:9121/metrics
+```
+
+**主要指标：**
+- `godis_connected_clients` — 当前活跃连接数
+- `godis_commands_total` — 累计处理命令数
+- `godis_keyspace_hits_total` / `godis_keyspace_misses_total` — 缓存命中/未命中计数
+- `godis_db_keys` — 各数据库的键数量
+- `godis_db_avg_ttl_seconds` — 各数据库平均 TTL
+- `godis_slowlog_length` — 慢查询日志队列长度
+- 热键和大键检测（定期采样）
+
+如需禁用，在配置文件的 `[monitoring]` 段设置 `prometheus_enabled = false`。所有监控配置支持热更新。
+
+```toml
+[monitoring]
+prometheus_enabled = true
+prometheus_port = 9121
+```
+
 ## Rueidis 客户端示例
 
 [Rueidis](https://github.com/redis/rueidis) 是一个高性能 Go Redis 客户端。以下是在 Godis 中使用 Rueidis 的示例：

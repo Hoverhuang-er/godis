@@ -69,3 +69,10 @@ log_slower_than = 10000
 
 # Maximum length of the slow log
 max_len = 128
+
+[monitoring]
+# Enable Prometheus metrics endpoint (enabled by default)
+prometheus_enabled = true
+
+# Prometheus metrics HTTP server port
+prometheus_port = 9121

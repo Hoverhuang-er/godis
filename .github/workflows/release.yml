@@ -39,6 +39,16 @@ jobs:
         with:
           go-version: '1.26'
           cache: true
+          cache-dependency-path: go.sum
+
+      - name: Cache Go build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: ${{ runner.os }}-go-build-${{ matrix.arch }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-build-${{ matrix.arch }}-
+            ${{ runner.os }}-go-build-
 
       - name: Build
         continue-on-error: true
@@ -46,7 +56,8 @@ jobs:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: '0'
-          GOEXPERIMENT: jsonv2
+          GOEXPERIMENT: jsonv2,greenteagc
+          GOAMD64: v3
         run: |
           output_name="godis"
           [ "${{ matrix.os }}" = "windows" ] && output_name="godis.exe"
@@ -171,7 +182,6 @@ jobs:
           platforms: ${{ matrix.target }}
           push: true
           tags: ghcr.io/${{ env.REPO_LC }}/operator:${{ github.ref_name }}-${{ env.PTAG }}
-          cache-from: type=gha
           cache-to: type=gha,mode=max
 
   # ---- Docker: operator multi-arch manifest ----

@@ -11,6 +11,7 @@ import (
 	"github.com/Hoverhuang-er/godis/internal/database"
 	idatabase "github.com/Hoverhuang-er/godis/internal/interface/database"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	_ "github.com/Hoverhuang-er/godis/internal/lib/greenteagc"
 	"github.com/Hoverhuang-er/godis/internal/redis/server/gnet"
 	stdserver "github.com/Hoverhuang-er/godis/internal/redis/server/std"
 	"github.com/Hoverhuang-er/godis/internal/lib/logger"

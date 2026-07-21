@@ -1,0 +1,33 @@
+config_mode = "standalone"
+
+[server]
+bind = "0.0.0.0"
+port = 6399
+# dir = "/opt/godis"
+maxclients = 128
+databases = 16
+# use_gnet = false
+
+[aof]
+appendonly = false
+appendfilename = "appendonly.aof"
+appendfsync = "everysec"
+aof_use_rdb_preamble = true
+dbfilename = "test.rdb"
+
+[security]
+# requirepass = "yourpassword"
+# masterauth = "masterpassword"
+
+[replication]
+# announce_host = "5.5.5.5"
+# slave_announce_port = 6399
+# repl_timeout = 60
+
+[slowlog]
+log_slower_than = 10000
+max_len = 128
+
+[monitoring]
+prometheus_enabled = true
+prometheus_port = 9121
