@@ -2,33 +2,113 @@ name: Test
 
 on:
   push:
-    branches: [ "master", "github-actions", "main" ]
+    branches: ["master", "github-actions", "main"]
   pull_request:
-    branches: [ "master", "main" ]
+    branches: ["master", "main"]
   workflow_dispatch:
 
 jobs:
   test:
+    name: Test ${{ matrix.pkg }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg:
+          - aof
+          - cluster/commands
+          - cluster/core
+          - cluster/raft
+          - config
+          - database
+          - datastruct/bitmap
+          - datastruct/dict
+          - datastruct/list
+          - datastruct/set
+          - datastruct/sortedset
+          - lib/consistenthash
+          - lib/geohash
+          - lib/idgenerator
+          - lib/pool
+          - lib/timewheel
+          - lib/wildcard
+          - redis/client
+          - redis/parser
+          - redis/server/gnet
+          - redis/server/std
+          - tcp
+        include:
+          # These packages need a live Redis server
+          - pkg: database
+            needsRedis: true
+          - pkg: redis/client
+            needsRedis: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Redis (required for database and client tests)
+        if: ${{ matrix.needsRedis }}
+        uses: zhulik/redis-action@1.1.0
+        with:
+          redis version: '5'
+          number of databases: 16
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run tests
+        env:
+          GOEXPERIMENT: jsonv2
+        run: |
+          pkg="./internal/${{ matrix.pkg }}/..."
+          echo "Testing: $pkg"
+          go test -v -coverprofile=profile.cov -covermode=atomic $pkg 2>&1 | tail -20
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.pkg }}
+          path: profile.cov
+          if-no-files-found: warn
+
+  # Aggregate all coverage profiles and report to Coveralls
+  coverage:
+    name: Aggregate Coverage
+    needs: test
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: zhulik/redis-action@1.1.0
-      with:
-        redis version: '5'
-        number of databases: 16
+      - name: Download all coverage profiles
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-artifacts
 
-    - uses: actions/setup-go@v5
-      with:
-        go-version: '1.26'
-        cache: true
+      - name: Merge coverage profiles
+        run: |
+          mkdir -p merged
+          first=true
+          for f in coverage-artifacts/coverage-*/profile.cov; do
+            if [ -f "$f" ]; then
+              if [ "$first" = true ]; then
+                cp "$f" merged/merged.cov
+                first=false
+              else
+                # Skip header line (mode: ...) on subsequent files
+                tail -n +2 "$f" >> merged/merged.cov
+              fi
+              echo "Merged: $f"
+            fi
+          done
+          echo "--- Merged coverage ($(wc -l < merged/merged.cov) lines) ---"
+          ls -lh merged/merged.cov
 
-    - name: Run all tests
-      env:
-        GOEXPERIMENT: jsonv2
-      run: go test -v -coverprofile=profile.cov ./...
-
-    - name: Upload coverage
-      uses: shogo82148/actions-goveralls@v1
-      with:
-        path-to-profile: profile.cov
+      - name: Upload coverage to Coveralls
+        uses: shogo82148/actions-goveralls@v1
+        with:
+          path-to-profile: merged/merged.cov
