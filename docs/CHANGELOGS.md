@@ -6,16 +6,10 @@
 - feat: add Helm chart, K8s operator, multi-arch Docker images
 - feat(release): build and push multi-arch Docker image to GHCR
 - feat: Prometheus metrics with hot/big key monitoring (redis_exporter compatible)
-- feat: `--cli` flag for built-in redis-cli (supports `-h`, `-p`, `-a` flags)
-- feat: `--web` flag for web dashboard with Fluent UI (query + monitoring)
-- feat: `--monitor` flag for TUI dashboard with real-time charts (ANSI terminal)
+- feat: `--cli` with `--monitor` sub-flag: split-screen TUI (3 monitoring panels + redis-cli)
+- feat: `--web` dashboard on :63808 with `-u`, `-h`, `-p`, `-a` flags
+- feat: `-u` redis:// URL support in CLI flags
 - feat: Entra ID (Azure AD) token-based authentication with JWKS validation
-- fix: auto-index string SET keys via search.IndexDocByPrefix
-- fix: auto-remove DEL keys from search indexes via search.RemoveDocByPrefix
-- docs: Prometheus monitoring section in EN, CN, JA, FI READMEs
-- docs: fix language links (blob/master/ → blob/master/docs/)
-- docs: add root README.md symlink for GitHub homepage rendering
-- docs: Mermaid bar chart replaces raw benchmark text
 
 ### Fixes
 - fix: add riscv64 support to boltdb/bolt via local patch
