@@ -7,7 +7,7 @@
 <br>
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/avelino/awesome-go)
 
-[English](https://github.com/Hoverhuang-er/godis/blob/master/README.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/README_JA.md) | [Suomi](https://github.com/Hoverhuang-er/godis/blob/master/README_FI.md)
+[English](https://github.com/Hoverhuang-er/godis/blob/master/docs/README.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_JA.md) | [Suomi](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_FI.md)
 
 Godis 是一个用 Go 语言实现的 Redis 服务器。本项目旨在为尝试使用 Go 语言开发高并发中间件的朋友提供一些参考。
 

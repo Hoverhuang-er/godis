@@ -8,7 +8,7 @@
 <br>
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/avelino/awesome-go)
 
-[English](https://github.com/Hoverhuang-er/godis/blob/master/README.md) | [中文版](https://github.com/Hoverhuang-er/godis/blob/master/README_CN.md) | [Suomi](https://github.com/Hoverhuang-er/godis/blob/master/README_FI.md)
+[English](https://github.com/Hoverhuang-er/godis/blob/master/docs/README.md) | [中文版](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_CN.md) | [Suomi](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_FI.md)
 
 `Godis` は Go 言語で実装された Redis サーバーです。Go 言語を使って高並行ミドルウェアを開発するための参考例を提供することを目的としています。
 
@@ -75,6 +75,32 @@ redis-cli -p 6399
 ```
 
 クラスター設定の詳細については [example.conf](./example.conf) を参照してください。
+
+### Prometheus モニタリング
+
+Godis は Prometheus 互換のメトリクスを `/metrics` エンドポイント (ポート `9121`、設定ファイルの `monitoring.prometheus_port` で変更可能) で公開します。メトリクスは **デフォルトで有効** で、`redis_exporter` の命名規則に従い、既存の Redis ダッシュボードと互換性があります。
+
+```bash
+# デフォルトのスクレイプエンドポイント
+curl http://localhost:9121/metrics
+```
+
+**主なメトリクス:**
+- `godis_connected_clients` — 現在のアクティブ接続数
+- `godis_commands_total` — 処理されたコマンドの総数
+- `godis_keyspace_hits_total` / `godis_keyspace_misses_total` — キャッシュヒット/ミスカウンター
+- `godis_db_keys` — データベースごとのキー数
+- `godis_db_avg_ttl_seconds` — データベースごとの平均 TTL
+- `godis_slowlog_length` — スローログのキュー長
+- ホットキーおよびビッグキーの検出 (定期的にサンプリング)
+
+無効にするには、設定ファイルの `[monitoring]` セクションで `prometheus_enabled = false` を設定します。すべてのモニタリング設定は実行時にホットリロードされます。
+
+```toml
+[monitoring]
+prometheus_enabled = true
+prometheus_port = 9121
+```
 
 ## Rueidis クライアント例
 

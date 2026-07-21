@@ -8,7 +8,7 @@
 <br>
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/avelino/awesome-go)
 
-[English](https://github.com/Hoverhuang-er/godis/blob/master/README.md) | [中文版](https://github.com/Hoverhuang-er/godis/blob/master/README_CN.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/README_JA.md)
+[English](https://github.com/Hoverhuang-er/godis/blob/master/docs/README.md) | [中文版](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_CN.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_JA.md)
 
 `Godis` on Go-kielellä toteutettu Redis-palvelin. Sen tarkoituksena on tarjota esimerkki korkean suorituskyvyn middlewaren kirjoittamisesta Go-ohjelmointikielellä.
 
@@ -75,6 +75,32 @@ redis-cli -p 6399
 ```
 
 Klusterikonfiguraatiota varten katso [example.conf](./example.conf).
+
+### Prometheus-seuranta
+
+Godis tarjoaa Prometheus-yhteensopivat mittarit `/metrics`-osoitteessa portissa `9121` (muokattavissa `monitoring.prometheus_port`-asetuksella `standalone.toml`-tiedostossa). Mittarit ovat **kaytossa oletuksena** ja noudattavat `redis_exporter`-nimeamiskaytantoja yhteensopivuuden varmistamiseksi olemassa olevien Redis-mittausnayttojen kanssa.
+
+```bash
+# Oletusarvoinen scrappausosoite
+curl http://localhost:9121/metrics
+```
+
+**Keskeiset mittarit:**
+- `godis_connected_clients` — nykyiset aktiiviset yhteydet
+- `godis_commands_total` — kasitellyt komennot yhteensa
+- `godis_keyspace_hits_total` / `godis_keyspace_misses_total` — vaLIMuistiosumien/ohitusten maara
+- `godis_db_keys` — avainten maara tietokannoittain
+- `godis_db_avg_ttl_seconds` — keskimaarainen TTL tietokannoittain
+- `godis_slowlog_length` — hitaiden kyselyjen lokin pituus
+- Kuumien ja suurten avainten tunnistus (säännöllinen näytteenotto)
+
+Poistaaksesi mittarit kaytosta, aseta `prometheus_enabled = false` konfiguraatiotiedoston `[monitoring]`-osiossa. Kaikki seuranta-asetukset voi ladata uudelleen ajon aikana.
+
+```toml
+[monitoring]
+prometheus_enabled = true
+prometheus_port = 9121
+```
 
 ## Rueidis-asiakasesimerkki
 

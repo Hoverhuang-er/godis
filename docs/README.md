@@ -8,7 +8,7 @@
 <br>
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/avelino/awesome-go)
 
-[中文版](https://github.com/Hoverhuang-er/godis/blob/master/README_CN.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/README_JA.md) | [Suomi](https://github.com/Hoverhuang-er/godis/blob/master/README_FI.md)
+[中文版](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_CN.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_JA.md) | [Suomi](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_FI.md)
 
 `Godis` is a golang implementation of Redis Server, which intents to provide an example of writing a high concurrent
 middleware using golang.
