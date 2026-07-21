@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Godis Dashboard</title>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@fluentui/web-components@2.6.1/dist/web-components.min.js"></script>
+<style>
+  :root {
+    --fill-color: #f5f0ff;
+    --accent: #7c4dff;
+    --accent-light: #b388ff;
+    --text-primary: #1a1a2e;
+    --text-secondary: #555;
+    --surface: #ffffff;
+    --surface-alt: #f0ebff;
+    --border: #e0d6ff;
+    --success: #4caf50;
+    --warning: #ff9800;
+  }
+  fluent-design-system-provider {
+    --neutral-foreground-rest: var(--text-primary);
+    --accent-fill-rest: var(--accent);
+    --accent-fill-hover: #651fff;
+    --neutral-fill-rest: var(--surface);
+    --neutral-fill-input-rest: var(--surface);
+    --neutral-fill-hover: var(--surface-alt);
+    --neutral-stroke-rest: var(--border);
+    --neutral-stroke-hover: var(--accent-light);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--fill-color);
+    color: var(--text-primary);
+    min-height: 100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, #7c4dff 0%, #651fff 50%, #5c1fff 100%);
+    color: white;
+    padding: 20px 40px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 2px 12px rgba(124,77,255,0.3);
+  }
+  .header h1 { font-size: 24px; font-weight: 600; }
+  .header .subtitle { opacity: 0.85; font-size: 14px; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 6px rgba(124,77,255,0.08);
+    border: 1px solid var(--border);
+  }
+  .card h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .query-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .query-row fluent-text-field {
+    flex: 1;
+  }
+  .query-row fluent-button {
+    min-width: 100px;
+  }
+  .result-box {
+    background: #1a1a2e;
+    color: #e8e0ff;
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 60px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .stat-card {
+    background: var(--surface-alt);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-card .value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .stat-card .label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--surface-alt);
+    color: var(--accent);
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:hover td { background: var(--surface-alt); }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .badge-string { background: #e3f2fd; color: #1565c0; }
+  .badge-list { background: #e8f5e9; color: #2e7d32; }
+  .badge-hash { background: #fff3e0; color: #e65100; }
+  .badge-set { background: #fce4ec; color: #c62828; }
+  .badge-zset { background: #f3e5f5; color: #6a1b9a; }
+  .bar-bg {
+    background: var(--surface-alt);
+    border-radius: 4px;
+    height: 20px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--accent-light), var(--accent));
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    font-size: 11px;
+    color: white;
+    font-weight: 600;
+    min-width: fit-content;
+  }
+  .hot-key-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+  }
+  .hot-key-rank {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .hot-key-name {
+    flex: 1;
+    font-family: monospace;
+    font-size: 13px;
+  }
+  .hot-key-count {
+    font-weight: 600;
+    color: var(--accent);
+    font-size: 13px;
+  }
+  @media (max-width: 768px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .header { padding: 16px; }
+    .container { padding: 12px; }
+  }
+  .loading { opacity: 0.5; pointer-events: none; }
+  .error-text { color: #d32f2f; }
+</style>
+</head>
+<body>
+  <fluent-design-system-provider>
+    <div class="header">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="8" fill="rgba(255,255,255,0.2)"/>
+        <path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <h1>Godis Dashboard</h1>
+        <div class="subtitle">Redis-compatible in-memory data store</div>
+      </div>
+    </div>
+
+    <div class="container">
+      <!-- Stats -->
+      <div class="stat-grid" id="statsGrid">
+        <div class="stat-card"><div class="value" id="statOps">0</div><div class="label">Ops/sec</div></div>
+        <div class="stat-card"><div class="value" id="statConn">0</div><div class="label">Connections</div></div>
+        <div class="stat-card"><div class="value" id="statCmds">0</div><div class="label">Total Commands</div></div>
+        <div class="stat-card"><div class="value" id="statMem">0 B</div><div class="label">Memory</div></div>
+      </div>
+
+      <!-- Query -->
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+          </svg>
+          Redis Query
+        </h2>
+        <div class="query-row">
+          <fluent-text-field id="queryInput" placeholder="Enter a read-only command, e.g. GET mykey, KEYS *, INFO, FT.SEARCH idx '*'" appearance="outline"></fluent-text-field>
+          <fluent-button id="queryBtn" appearance="accent" onclick="executeQuery()">Run</fluent-button>
+        </div>
+        <div class="result-box" id="resultBox">Type a command and click Run</div>
+      </div>
+
+      <!-- Monitoring -->
+      <div class="grid-2">
+        <!-- Hot Keys -->
+        <div class="card">
+          <h2>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ff9800" stroke-width="2">
+              <path d="M12 2l2.4 7.2H22l-6 4.8 2.4 7.2L12 16l-6.4 4.8L8 14l-6-4.8h7.6z"/>
+            </svg>
+            Hot Keys (Top 20)
+          </h2>
+          <div id="hotKeysList"><em style="color:var(--text-secondary)">Collecting data...</em></div>
+        </div>
+
+        <!-- Big Keys -->
+        <div class="card">
+          <h2>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>
+            </svg>
+            Big Keys
+          </h2>
+          <div id="bigKeysList"><em style="color:var(--text-secondary)">Collecting data...</em></div>
+        </div>
+      </div>
+
+      <!-- DB Stats -->
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+          </svg>
+          Database Statistics
+        </h2>
+        <table>
+          <thead><tr><th>Database</th><th>Keys</th><th>Expires</th><th>Usage</th></tr></thead>
+          <tbody id="dbStatsBody"><tr><td colspan="4"><em style="color:var(--text-secondary)">Loading...</em></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      async function executeQuery() {
+        const input = document.getElementById('queryInput');
+        const btn = document.getElementById('queryBtn');
+        const resultBox = document.getElementById('resultBox');
+        const cmd = input.value.trim();
+        if (!cmd) return;
+
+        btn.classList.add('loading');
+        resultBox.textContent = 'Executing...';
+
+        try {
+          const resp = await fetch('/api/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'cmd=' + encodeURIComponent(cmd)
+          });
+          const data = await resp.json();
+          if (data.success) {
+            resultBox.textContent = data.result || '(empty result)';
+          } else {
+            resultBox.innerHTML = '<span class="error-text">Error: ' + (data.error || 'unknown') + '</span>';
+          }
+        } catch(e) {
+          resultBox.innerHTML = '<span class="error-text">Connection error: ' + e.message + '</span>';
+        }
+        btn.classList.remove('loading');
+      }
+
+      document.getElementById('queryInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') executeQuery();
+      });
+
+      async function loadMonitor() {
+        try {
+          const resp = await fetch('/api/monitor');
+          const data = await resp.json();
+
+          // Hot Keys
+          const hotDiv = document.getElementById('hotKeysList');
+          if (data.hotKeys && data.hotKeys.length > 0) {
+            const top = data.hotKeys.slice(0, 20);
+            const maxCount = top[0]?.count || 1;
+            hotDiv.innerHTML = top.map((hk, i) =>
+              '<div class="hot-key-item">' +
+                '<div class="hot-key-rank">' + (i+1) + '</div>' +
+                '<div class="hot-key-name">' + escapeHtml(hk.key) + '</div>' +
+                '<div class="hot-key-count">' + hk.count + '</div>' +
+                '<div class="bar-bg" style="width:100px"><div class="bar-fill" style="width:' + (hk.count / maxCount * 100) + '%">' + hk.count + '</div></div>' +
+              '</div>'
+            ).join('');
+          } else {
+            hotDiv.innerHTML = '<em style="color:var(--text-secondary)">No hot keys tracked yet</em>';
+          }
+
+          // Big Keys
+          const bigDiv = document.getElementById('bigKeysList');
+          if (data.bigKeys && data.bigKeys.length > 0) {
+            const sorted = data.bigKeys.sort((a,b) => b.bytes - a.bytes);
+            bigDiv.innerHTML =
+              '<table><thead><tr><th>Key</th><th>Type</th><th>Size</th><th>Bytes</th></tr></thead><tbody>' +
+              sorted.map(bk =>
+                '<tr>' +
+                  '<td>' + escapeHtml(bk.key) + '</td>' +
+                  '<td><span class="badge badge-' + bk.type + '">' + bk.type + '</span></td>' +
+                  '<td>' + bk.size + '</td>' +
+                  '<td>' + formatBytes(bk.bytes) + '</td>' +
+                '</tr>'
+              ).join('') +
+              '</tbody></table>';
+          } else {
+            bigDiv.innerHTML = '<em style="color:var(--text-secondary)">No big keys detected</em>';
+          }
+
+          // DB Stats
+          const dbBody = document.getElementById('dbStatsBody');
+          if (data.dbStats && data.dbStats.length > 0) {
+            const maxKeys = Math.max(...data.dbStats.map(d => d.keys), 1);
+            dbBody.innerHTML = data.dbStats.map(d =>
+              '<tr>' +
+                '<td>db' + d.index + '</td>' +
+                '<td><strong>' + d.keys + '</strong></td>' +
+                '<td>' + d.expires + '</td>' +
+                '<td><div class="bar-bg"><div class="bar-fill" style="width:' + (d.keys / maxKeys * 100) + '%">' + d.keys + '</div></div></td>' +
+              '</tr>'
+            ).join('');
+          } else {
+            dbBody.innerHTML = '<tr><td colspan="4"><em style="color:var(--text-secondary)">No databases</em></td></tr>';
+          }
+        } catch(e) {
+          console.error('Monitor load failed:', e);
+        }
+      }
+
+      async function loadStats() {
+        try {
+          const resp = await fetch('/api/stats');
+          const data = await resp.json();
+          document.getElementById('statOps').textContent = data.opsPerSec || 0;
+          document.getElementById('statConn').textContent = data.connections || 0;
+          document.getElementById('statCmds').textContent = (data.commands || 0).toLocaleString();
+          document.getElementById('statMem').textContent = formatBytes(data.memory || 0);
+        } catch(e) {}
+      }
+
+      function formatBytes(b) {
+        if (b === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(b) / Math.log(1024));
+        return (b / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
+      }
+
+      function escapeHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      // Refresh monitor and stats every 3 seconds
+      loadMonitor();
+      loadStats();
+      setInterval(loadMonitor, 3000);
+      setInterval(loadStats, 3000);
+    </script>
+  </fluent-design-system-provider>
+</body>
+</html>

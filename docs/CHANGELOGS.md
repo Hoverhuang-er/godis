@@ -7,14 +7,8 @@
 - feat(release): build and push multi-arch Docker image to GHCR
 - feat: Prometheus metrics with hot/big key monitoring (redis_exporter compatible)
 - feat: `--cli` flag for built-in redis-cli (supports `-h`, `-p`, `-a` flags)
+- feat: `--web` flag for web dashboard with Fluent UI (query + monitoring)
 - feat: Entra ID (Azure AD) token-based authentication with JWKS validation
-- feat: `--entra-tenant` / `--entra-app` flags for CLI Entra ID auth
-- feat: redis-vl-golang compatibility — FT.SEARCH score format, FT.INFO schema
-- feat: HyperLogLog — PFADD, PFCOUNT, PFMERGE
-- chore: rename module to github.com/Hoverhuang-er/godis
-- build: GOEXPERIMENT=greenteagc for GC tuning (GCPercent=40, thread pinning)
-- build: GOAMD64=v3 for x86-64 SIMD (AVX2, AVX, FMA, BMI instruction set)
-- build: greenteagc runtime init now correctly imported and activated
 - build: Docker buildx layer caching (type=gha,mode=max)
 - feat: `--cli` with SUBSCRIBE/PSUBSCRIBE support for real-time push messages
 - perf: concurrent TCC — parallel prepare/commit/rollback across nodes (goroutines + sync.WaitGroup)
