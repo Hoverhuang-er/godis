@@ -123,6 +123,7 @@ jobs:
           draft: false
           prerelease: false
 
+  upload-checksums:
     if: ${{ !cancelled() }}
     name: Upload Checksums
     needs: release
