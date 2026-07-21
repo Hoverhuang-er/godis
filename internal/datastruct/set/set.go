@@ -1,8 +1,8 @@
 package set
 
 import (
-	"github.com/hdt3213/godis/internal/datastruct/dict"
-	"github.com/hdt3213/godis/internal/lib/wildcard"
+	"github.com/Hoverhuang-er/godis/internal/datastruct/dict"
+	"github.com/Hoverhuang-er/godis/internal/lib/wildcard"
 )
 
 // Set is a set of elements based on hash table

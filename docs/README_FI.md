@@ -1,14 +1,14 @@
 # Godis v1.3.1
 
-![license](https://img.shields.io/github/license/HDT3213/godis)
-[![Build Status](https://github.com/hdt3213/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/HDT3213/godis/actions?query=branch%3Amaster)
-[![Coverage Status](https://coveralls.io/repos/github/HDT3213/godis/badge.svg?branch=master)](https://coveralls.io/github/HDT3213/godis?branch=master)
-[![Go Report Card](https://goreportcard.com/badge/github.com/HDT3213/godis)](https://goreportcard.com/report/github.com/HDT3213/godis)
-[![Go Reference](https://pkg.go.dev/badge/github.com/hdt3213/godis.svg)](https://pkg.go.dev/github.com/hdt3213/godis)
+![license](https://img.shields.io/github/license/Hoverhuang-er/godis)
+[![Build Status](https://github.com/Hoverhuang-er/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/Hoverhuang-er/godis/actions?query=branch%3Amaster)
+[![Coverage Status](https://coveralls.io/repos/github/Hoverhuang-er/godis/badge.svg?branch=master)](https://coveralls.io/github/Hoverhuang-er/godis?branch=master)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Hoverhuang-er/godis)](https://goreportcard.com/report/github.com/Hoverhuang-er/godis)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Hoverhuang-er/godis.svg)](https://pkg.go.dev/github.com/Hoverhuang-er/godis)
 <br>
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/avelino/awesome-go)
 
-[English](https://github.com/hdt3213/godis/blob/master/README.md) | [中文版](https://github.com/hdt3213/godis/blob/master/README_CN.md) | [日本語](https://github.com/hdt3213/godis/blob/master/README_JA.md)
+[English](https://github.com/Hoverhuang-er/godis/blob/master/README.md) | [中文版](https://github.com/Hoverhuang-er/godis/blob/master/README_CN.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/README_JA.md)
 
 `Godis` on Go-kielellä toteutettu Redis-palvelin. Sen tarkoituksena on tarjota esimerkki korkean suorituskyvyn middlewaren kirjoittamisesta Go-ohjelmointikielellä.
 
@@ -132,7 +132,7 @@ func main() {
 
 ## Tuetut komennot
 
-Katso [commands.md](https://github.com/HDT3213/godis/blob/master/commands.md).
+Katso [commands.md](https://github.com/Hoverhuang-er/godis/blob/master/commands.md).
 
 ## Suorituskykymittaus
 
@@ -215,4 +215,4 @@ Suosittelen keskittymista seuraaviin hakemistoihin:
 
 # Lisenssi
 
-Tama projekti on lisensoitu [GPL-lisenssilla](https://github.com/hdt3213/godis/blob/master/LICENSE).
+Tama projekti on lisensoitu [GPL-lisenssilla](https://github.com/Hoverhuang-er/godis/blob/master/LICENSE).

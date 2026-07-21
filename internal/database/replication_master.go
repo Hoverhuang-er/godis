@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hdt3213/godis/internal/interface/redis"
-	"github.com/hdt3213/godis/internal/lib/sync/atomic"
-	"github.com/hdt3213/godis/internal/lib/utils"
-	"github.com/hdt3213/godis/internal/redis/protocol"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/lib/sync/atomic"
+	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 	"log/slog"
 )
 

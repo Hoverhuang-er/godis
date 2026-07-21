@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hdt3213/godis/internal/datastruct/search"
-	"github.com/hdt3213/godis/internal/interface/redis"
-	"github.com/hdt3213/godis/internal/lib/utils"
-	"github.com/hdt3213/godis/internal/redis/protocol"
+	"github.com/Hoverhuang-er/godis/internal/datastruct/search"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 )
 
 // parseFieldType parses a field type string (TEXT, TAG, NUMERIC, VECTOR) into a FieldType constant.

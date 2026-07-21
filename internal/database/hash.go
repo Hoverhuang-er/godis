@@ -4,12 +4,12 @@ import (
 	"strconv"
 	"strings"
 
-	Dict "github.com/hdt3213/godis/internal/datastruct/dict"
-	"github.com/hdt3213/godis/internal/datastruct/search"
-	"github.com/hdt3213/godis/internal/interface/database"
-	"github.com/hdt3213/godis/internal/interface/redis"
-	"github.com/hdt3213/godis/internal/lib/utils"
-	"github.com/hdt3213/godis/internal/redis/protocol"
+	Dict "github.com/Hoverhuang-er/godis/internal/datastruct/dict"
+	"github.com/Hoverhuang-er/godis/internal/datastruct/search"
+	"github.com/Hoverhuang-er/godis/internal/interface/database"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 )
 
 func reindexHash(key string, dict Dict.Dict) {

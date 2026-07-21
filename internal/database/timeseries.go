@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"strings"
 
-	TS "github.com/hdt3213/godis/internal/datastruct/timeseries"
-	"github.com/hdt3213/godis/internal/interface/database"
-	"github.com/hdt3213/godis/internal/interface/redis"
-	"github.com/hdt3213/godis/internal/redis/protocol"
+	TS "github.com/Hoverhuang-er/godis/internal/datastruct/timeseries"
+	"github.com/Hoverhuang-er/godis/internal/interface/database"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 )
 
 // execTSCreate creates a new time series with optional RETENTION and LABELS

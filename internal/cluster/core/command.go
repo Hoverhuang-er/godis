@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hdt3213/godis/internal/config"
-	"github.com/hdt3213/godis/internal/database"
-	"github.com/hdt3213/godis/internal/interface/redis"
-	"github.com/hdt3213/godis/internal/redis/protocol"
+	"github.com/Hoverhuang-er/godis/internal/config"
+	"github.com/Hoverhuang-er/godis/internal/database"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 	"log/slog"
 )
 

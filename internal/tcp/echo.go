@@ -7,8 +7,8 @@ package tcp
 import (
 	"bufio"
 	"context"
-	"github.com/hdt3213/godis/internal/lib/sync/atomic"
-	"github.com/hdt3213/godis/internal/lib/sync/wait"
+	"github.com/Hoverhuang-er/godis/internal/lib/sync/atomic"
+	"github.com/Hoverhuang-er/godis/internal/lib/sync/wait"
 	"io"
 	"net"
 	"sync"

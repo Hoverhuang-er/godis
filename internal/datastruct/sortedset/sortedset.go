@@ -3,7 +3,7 @@ package sortedset
 import (
 	"strconv"
 
-	"github.com/hdt3213/godis/internal/lib/wildcard"
+	"github.com/Hoverhuang-er/godis/internal/lib/wildcard"
 )
 
 // SortedSet is a set which keys sorted by bound score

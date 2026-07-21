@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hdt3213/godis/internal/datastruct/sortedset"
-	"github.com/hdt3213/godis/internal/interface/redis"
-	"github.com/hdt3213/godis/internal/lib/geohash"
-	"github.com/hdt3213/godis/internal/lib/utils"
-	"github.com/hdt3213/godis/internal/redis/protocol"
+	"github.com/Hoverhuang-er/godis/internal/datastruct/sortedset"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/lib/geohash"
+	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 )
 
 // execGeoAdd add a location into SortedSet

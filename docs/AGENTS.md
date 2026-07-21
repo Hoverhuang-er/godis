@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**godis** — a Redis-compatible in-memory database server written in Go (`github.com/hdt3213/godis`). Supports standalone, Raft-based cluster, master-replica replication, AOF/RDB persistence, pub/sub, transactions (MULTI/EXEC/WATCH), and RESP2/RESP3 protocols. Runs on std TCP or gnet event-loop transport.
+**godis** — a Redis-compatible in-memory database server written in Go (`github.com/Hoverhuang-er/godis`). Supports standalone, Raft-based cluster, master-replica replication, AOF/RDB persistence, pub/sub, transactions (MULTI/EXEC/WATCH), and RESP2/RESP3 protocols. Runs on std TCP or gnet event-loop transport.
 
 ---
 
@@ -151,7 +151,7 @@ Structured JSON logging via `internal/lib/logger` (wraps `zap.Logger`, bridges `
 ## Runtime/Tooling Preferences
 
 - **Runtime**: Go 1.26.0+, no other runtime required
-- **Module**: `github.com/hdt3213/godis`
+- **Module**: `github.com/Hoverhuang-er/godis`
 - **Package manager**: Go modules (no external tooling)
 - **Key deps**: `github.com/hashicorp/raft` + `raft-boltdb` (cluster), `github.com/hdt3213/rdb` (RDB parser), `github.com/panjf2000/gnet/v2` (event-loop transport)
 - **Build constraint**: `CGO_ENABLED=0` for all cross-compilation

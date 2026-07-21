@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	Stream "github.com/hdt3213/godis/internal/datastruct/stream"
-	"github.com/hdt3213/godis/internal/interface/database"
-	"github.com/hdt3213/godis/internal/interface/redis"
-	"github.com/hdt3213/godis/internal/lib/utils"
-	"github.com/hdt3213/godis/internal/redis/protocol"
+	Stream "github.com/Hoverhuang-er/godis/internal/datastruct/stream"
+	"github.com/Hoverhuang-er/godis/internal/interface/database"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 )
 
 // getAsStream retrieves the stream entity for a given key, returning an error if the type is wrong.

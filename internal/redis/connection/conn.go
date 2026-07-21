@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hdt3213/godis/internal/interface/redis"
-	"github.com/hdt3213/godis/internal/lib/sync/wait"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/lib/sync/wait"
 	"log/slog"
 )
 

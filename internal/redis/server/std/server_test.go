@@ -2,7 +2,7 @@ package std
 
 import (
 	"bufio"
-	"github.com/hdt3213/godis/internal/tcp"
+	"github.com/Hoverhuang-er/godis/internal/tcp"
 	"net"
 	"testing"
 	"time"

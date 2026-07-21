@@ -14,14 +14,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hdt3213/godis/internal/aof"
-	"github.com/hdt3213/godis/internal/config"
-	"github.com/hdt3213/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/aof"
+	"github.com/Hoverhuang-er/godis/internal/config"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	rdb "github.com/hdt3213/rdb/parser"
-	"github.com/hdt3213/godis/internal/lib/utils"
-	"github.com/hdt3213/godis/internal/redis/connection"
-	"github.com/hdt3213/godis/internal/redis/parser"
-	"github.com/hdt3213/godis/internal/redis/protocol"
+	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/Hoverhuang-er/godis/internal/redis/connection"
+	"github.com/Hoverhuang-er/godis/internal/redis/parser"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 	"log/slog"
 )
 

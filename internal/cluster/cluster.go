@@ -5,10 +5,10 @@ import (
 	"os"
 	"path"
 
-	_ "github.com/hdt3213/godis/internal/cluster/commands" // register commands
-	"github.com/hdt3213/godis/internal/cluster/core"
-	"github.com/hdt3213/godis/internal/cluster/raft"
-	"github.com/hdt3213/godis/internal/config"
+	_ "github.com/Hoverhuang-er/godis/internal/cluster/commands" // register commands
+	"github.com/Hoverhuang-er/godis/internal/cluster/core"
+	"github.com/Hoverhuang-er/godis/internal/cluster/raft"
+	"github.com/Hoverhuang-er/godis/internal/config"
 	"log/slog"
 )
 

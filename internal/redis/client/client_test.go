@@ -2,14 +2,14 @@ package client
 
 import (
 	"bytes"
-	"github.com/hdt3213/godis/internal/lib/utils"
-	"github.com/hdt3213/godis/internal/redis/protocol"
-	"github.com/hdt3213/godis/internal/redis/protocol/asserts"
+	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol/asserts"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/hdt3213/godis/internal/lib/logger"
+	"github.com/Hoverhuang-er/godis/internal/lib/logger"
 )
 
 func TestClient(t *testing.T) {
