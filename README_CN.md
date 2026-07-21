@@ -7,10 +7,16 @@
 <br>
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/avelino/awesome-go)
 
+[English](https://github.com/hdt3213/godis/blob/master/README.md) | [日本語](https://github.com/hdt3213/godis/blob/master/README_JA.md) | [Suomi](https://github.com/hdt3213/godis/blob/master/README_FI.md)
+
 Godis 是一个用 Go 语言实现的 Redis 服务器。本项目旨在为尝试使用 Go 语言开发高并发中间件的朋友提供一些参考。
 
 关键功能:
+- Redis 8.8.0 命令兼容
 - 支持 string, list, hash, set, sorted set, bitmap 数据结构
+- RediSearch 搜索 (FT.CREATE, FT.SEARCH, FT.DROPINDEX 等)
+- Time Series 时序数据 (TS.CREATE, TS.ADD, TS.GET, TS.RANGE 等)
+- Redis-Vector 向量搜索 (VECTOR 字段类型, KNN 搜索)
 - 并行内核，提供更优秀的性能
 - 自动过期功能(TTL)
 - 发布订阅
@@ -38,14 +44,9 @@ Godis 的信息。
 ```
 
 ![](https://i.loli.net/2021/05/15/oQM1yZ6pWm3AIEj.png)
+godis 首先会从CONFIG环境变量中读取配置文件路径。若环境变量中未设置配置文件路径，则会尝试读取工作目录中的 standalone.toml（或 redis.conf）文件。 
 
-godis 默认监听 0.0.0.0:6399，可以使用 redis-cli 或者其它 redis 客户端连接 Godis 服务器。
-
-![](https://i.loli.net/2021/05/15/7WquEgonzY62sZI.png)
-
-godis 首先会从CONFIG环境变量中读取配置文件路径。若环境变量中未设置配置文件路径，则会尝试读取工作目录中的 redis.conf 文件。 
-
-所有配置项均在 [example.conf](./example.conf) 中作了说明。
+所有配置项均在 [standalone.toml](./standalone.toml) 和 [example.conf](./example.conf) 中作了说明。
 
 ## 集群模式
 
@@ -63,6 +64,60 @@ redis-cli -p 6399
 ```
 
 更多配置请查阅 [example.conf](./example.conf)
+
+## Rueidis 客户端示例
+
+[Rueidis](https://github.com/redis/rueidis) 是一个高性能 Go Redis 客户端。以下是在 Godis 中使用 Rueidis 的示例：
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/redis/rueidis"
+)
+
+func main() {
+	client, err := rueidis.NewClient(rueidis.ClientOption{
+		InitAddress: []string{"localhost:6399"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// SET/GET 示例
+	err = client.Do(ctx, client.B().Set().Key("foo").Value("bar").Build()).Error()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	val, err := client.Do(ctx, client.B().Get().Key("foo").Build()).ToString()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("GET foo = %s\n", val)
+
+	// RediSearch 示例
+	// 需要先通过 FT.CREATE 创建索引
+	result, err := client.Do(ctx, client.B().FtSearch().Index("idx").Query("@field:val").Build()).ToArray()
+	if err != nil {
+		log.Printf("搜索说明: %v (请先通过 FT.CREATE 创建索引)", err)
+	}
+	_ = result
+
+	// Time Series 示例
+	err = client.Do(ctx, client.B().TsAdd().Key("ts:temp").Timestamp(1).Value(25.5).Build()).Error()
+	if err != nil {
+		log.Printf("时序数据说明: %v", err)
+	}
+}
+```
 
 ## 支持的命令
 

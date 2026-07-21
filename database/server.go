@@ -19,7 +19,7 @@ import (
 	"log/slog"
 )
 
-var godisVersion = "1.3.0" // do not modify
+var godisVersion = "1.3.1" // do not modify
 
 var connIDCounter int64
 

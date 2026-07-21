@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 
 	"github.com/hdt3213/godis/cluster"
 	"github.com/hdt3213/godis/config"
@@ -45,18 +47,32 @@ func main() {
 		Ext:        "log",
 		TimeFormat: "2006-01-02",
 	})
-	configFilename := os.Getenv("CONFIG")
-	if configFilename == "" {
-		if fileExists("redis.conf") {
-			config.SetupConfig("redis.conf")
+
+	// Determine config source
+	nacosAddr := os.Getenv("NACOS_ADDR")
+	if nacosAddr != "" {
+		// Load config from Nacos config center
+		namespaceId := os.Getenv("NACOS_NAMESPACE")
+		group := os.Getenv("NACOS_GROUP")
+		if group == "" {
+			group = "DEFAULT_GROUP"
+		}
+		dataId := os.Getenv("NACOS_DATA_ID")
+		if dataId == "" {
+			dataId = "godis"
+		}
+		config.SetupConfigFromNacos(nacosAddr, namespaceId, group, dataId)
+	} else {
+		// Detect local config file
+		configFilename, found := config.DetectConfigFile()
+		if found {
+			config.SetupConfig(configFilename)
 		} else {
 			config.Properties = defaultProperties
 		}
-	} else {
-		config.SetupConfig(configFilename)
 	}
-	listenAddr := fmt.Sprintf("%s:%d", config.Properties.Bind, config.Properties.Port)
-	
+	listenAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
+
 	var err error
 	if config.Properties.UseGnet {
 		var db idatabase.DB

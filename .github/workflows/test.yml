@@ -1,0 +1,32 @@
+name: Test
+
+on:
+  push:
+    branches: [ "master", "github-actions", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: zhulik/redis-action@1.1.0
+      with:
+        redis version: '5'
+        number of databases: 16
+
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.26'
+        cache: true
+
+    - name: Run all tests
+      run: go test -v -coverprofile=profile.cov ./...
+
+    - name: Upload coverage
+      uses: shogo82148/actions-goveralls@v1
+      with:
+        path-to-profile: profile.cov

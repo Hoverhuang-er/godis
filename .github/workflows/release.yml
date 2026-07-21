@@ -64,7 +64,11 @@ jobs:
             output_name="godis.exe"
           fi
           archive_name="godis_${{ matrix.os }}_${{ matrix.arch }}.zip"
+          # Include standalone.toml configuration template
           zip "$archive_name" "$output_name"
+          if [ -f "standalone.toml" ]; then
+            zip "$archive_name" "standalone.toml"
+          fi
           rm -f "$output_name"
 
       - name: Upload Artifact
@@ -89,6 +93,10 @@ jobs:
           find . -name '*.zip' -exec shasum -a 256 {} \; > checksums.txt
           cat checksums.txt
 
+      - name: Prepare Release Notes
+        run: |
+          cp CHANGELOGS.md CHANGELOGS-latest.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -110,7 +118,9 @@ jobs:
             - Time Series (TS.CREATE, TS.ADD, TS.GET, TS.RANGE)
             - Arena memory management
             - Compatible with go-redis and rueidis
-          files: artifacts/*/*.zip
+          files: |
+            artifacts/*/*.zip
+            CHANGELOGS-latest.md
           draft: false
           prerelease: false
 

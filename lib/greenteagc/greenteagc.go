@@ -1,7 +1,5 @@
 //go:build greenteagc
 
-//go:build greenteagc
-
 package greenteagc
 
 import (

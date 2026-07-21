@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# godis v1.3.0 Release Build Script
+# godis v1.3.1 Release Build Script
 # Builds godis for all target platforms and packages as godis_${OS}_${ARCH}.zip
 
-VERSION="1.3.0"
+VERSION="1.3.1"
 BUILD_DIR="build"
 BINARY_NAME="godis"
 
@@ -53,6 +53,11 @@ for target in "${TARGETS[@]}"; do
         zip "${archive_name}" "${output_name}"
     else
         zip "${archive_name}" "${output_name}"
+    fi
+
+    # Include standalone.toml configuration template if present
+    if [ -f "standalone.toml" ]; then
+        zip "${archive_name}" "standalone.toml"
     fi
 
     rm -f "${output_name}"

@@ -1,0 +1,77 @@
+# Godis Cluster Configuration
+# This is a TOML-format configuration file for cluster mode.
+# Copy this file as cluster.toml in your working directory, or set
+# the CONFIG environment variable to point to it.
+#
+# Usage:
+#   CONFIG=cluster.toml ./godis
+#   or simply place cluster.toml in the working directory (requires
+#   cluster section configuration).
+
+config_mode = "cluster"
+
+[server]
+# Bind address for the Redis service
+bind = "0.0.0.0"
+
+# Port to listen on
+port = 7369
+
+# Working directory for AOF, RDB, Raft metadata
+dir = "/opt/godis/node1"
+
+# Maximum number of client connections
+maxclients = 128
+
+# Use gnet event-loop TCP server for better IO performance
+use_gnet = false
+
+[aof]
+# Enable AOF persistence
+appendonly = true
+
+# AOF filename
+appendfilename = "appendonly.aof"
+
+# Fsync policy
+appendfsync = "everysec"
+
+# Use RDB preamble in AOF rewrite
+aof_use_rdb_preamble = true
+
+# RDB filename
+dbfilename = "node.rdb"
+
+[security]
+# Password for node authentication
+requirepass = ""
+masterauth = ""
+
+[replication]
+# Advertised address for NAT traversal in replication
+announce_host = ""
+slave_announce_port = 0
+repl_timeout = 60
+
+[slowlog]
+log_slower_than = 10000
+max_len = 128
+
+[cluster]
+# Enable cluster mode
+enable = true
+
+# Set to true to create a new cluster (only effective when no cluster data exists on disk)
+# as_seed = true
+
+# Address of any node in the cluster to join (use Redis service address, NOT Raft)
+# seed = "127.0.0.1:6399"
+
+# Raft consensus listen address
+# raft_listen_address = "0.0.0.0:16666"
+
+# Raft advertise address for NAT traversal
+# raft_advertise_address = ""
+
+# If joining as a replica of an existing node, set master's Redis address
+# master_in_cluster = "127.0.0.1:6399"

@@ -1,4 +1,4 @@
-# Godis
+# Godis v1.3.1
 
 ![license](https://img.shields.io/github/license/HDT3213/godis)
 [![Build Status](https://github.com/hdt3213/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/HDT3213/godis/actions?query=branch%3Amaster)
@@ -8,14 +8,18 @@
 <br>
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/avelino/awesome-go)
 
-[中文版](https://github.com/hdt3213/godis/blob/master/README_CN.md)
+[中文版](https://github.com/hdt3213/godis/blob/master/README_CN.md) | [日本語](https://github.com/hdt3213/godis/blob/master/README_JA.md) | [Suomi](https://github.com/hdt3213/godis/blob/master/README_FI.md)
 
 `Godis` is a golang implementation of Redis Server, which intents to provide an example of writing a high concurrent
 middleware using golang.
 
 Key Features:
 
+- Redis 8.8.0 command compatibility
 - Support string, list, hash, set, sorted set, bitmap
+- RediSearch (FT.CREATE, FT.SEARCH, FT.DROPINDEX, etc.)
+- Time Series (TS.CREATE, TS.ADD, TS.GET, TS.RANGE, etc.)
+- Redis-Vector (VECTOR field type, KNN search)
 - Concurrent Core for better performance
 - TTL
 - Publish/Subscribe
@@ -46,15 +50,11 @@ You can get runnable program in the releases of this repository, which supports 
 
 ![](https://i.loli.net/2021/05/15/oQM1yZ6pWm3AIEj.png)
 
-You could use redis-cli or other redis client to connect godis server, which listens on 0.0.0.0:6399 on default mode.
-
-![](https://i.loli.net/2021/05/15/7WquEgonzY62sZI.png)
-
 The program will try to read config file path from environment variable `CONFIG`.
 
-If environment variable is not set, then the program try to read `redis.conf` in the working directory.
+If environment variable is not set, then the program tries to read `standalone.toml` (or `redis.conf`) in the working directory.
 
-Please see [example.conf](./example.conf) for all configuration information.
+Please see [standalone.toml](./standalone.toml) and [example.conf](./example.conf) for all configuration information.
 
 ### cluster mode
 
@@ -72,6 +72,60 @@ redis-cli -p 6399
 ```
 
 Please refer to [example.conf](./example.conf) for cluster configuration.
+
+## Rueidis Client Example
+
+[Rueidis](https://github.com/redis/rueidis) is a high-performance Redis client for Go. Here's how to use it with Godis:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/redis/rueidis"
+)
+
+func main() {
+	client, err := rueidis.NewClient(rueidis.ClientOption{
+		InitAddress: []string{"localhost:6399"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// SET/GET example
+	err = client.Do(ctx, client.B().Set().Key("foo").Value("bar").Build()).Error()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	val, err := client.Do(ctx, client.B().Get().Key("foo").Build()).ToString()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("GET foo = %s\n", val)
+
+	// RediSearch example
+	// Requires FT.CREATE index first
+	result, err := client.Do(ctx, client.B().FtSearch().Index("idx").Query("@field:val").Build()).ToArray()
+	if err != nil {
+		log.Printf("Search note: %v (create index with FT.CREATE first)", err)
+	}
+	_ = result
+
+	// Time Series example
+	err = client.Do(ctx, client.B().TsAdd().Key("ts:temp").Timestamp(1).Value(25.5).Build()).Error()
+	if err != nil {
+		log.Printf("Time series note: %v", err)
+	}
+}
+```
 
 ## Supported Commands
 
