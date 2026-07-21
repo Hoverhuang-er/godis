@@ -19,7 +19,6 @@ type cliFlags struct {
 	host        string
 	port        int
 	auth        string
-	monitor     bool
 	entraTenant string
 	entraApp    string
 }
@@ -30,8 +29,6 @@ func parseCLIFlags() cliFlags {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--cli":
-		case "--monitor":
-			f.monitor = true
 		case "-u":
 			if i+1 < len(args) {
 				i++
@@ -109,19 +106,7 @@ func runCLI() {
 		}
 	}
 
-	if flags.monitor {
-		runMonitorTUI(c, flags)
-		return
-	}
-
-	stat, _ := os.Stdin.Stat()
-	isTerminal := (stat.Mode() & os.ModeCharDevice) != 0
-
-	if isTerminal {
-		runInteractive(c, flags)
-	} else {
-		runBatch(c, os.Stdin, flags)
-	}
+	runCLITUI(c, flags)
 }
 
 func runInteractive(c *rclient.Client, flags cliFlags) {

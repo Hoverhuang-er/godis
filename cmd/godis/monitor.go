@@ -31,7 +31,10 @@ const (
 	cursorLoad = "\033[u"
 )
 
-type monitorTUI struct {
+type kv struct{ key string; count int64 }
+type bk struct{ key string; typ string; bytes int64 }
+
+type cliTUI struct {
 	c           *client.Client
 	flags       cliFlags
 	width       int
@@ -51,10 +54,7 @@ type monitorTUI struct {
 	cmdPos     int
 }
 
-type kv struct{ key string; count int64 }
-type bk struct{ key string; typ string; bytes int64 }
-
-func runMonitorTUI(c *client.Client, flags cliFlags) {
+func runCLITUI(c *client.Client, flags cliFlags) {
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to enter raw terminal mode: %v\n", err)
@@ -67,7 +67,7 @@ func runMonitorTUI(c *client.Client, flags cliFlags) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGWINCH)
 
-	tui := &monitorTUI{
+	tui := &cliTUI{
 		c:         c,
 		flags:     flags,
 		startTime: time.Now(),
@@ -137,7 +137,7 @@ func runMonitorTUI(c *client.Client, flags cliFlags) {
 	}
 }
 
-func (t *monitorTUI) collectData() {
+func (t *cliTUI) collectData() {
 	// Collect INFO
 	reply := t.c.Send(utils.ToCmdLine("INFO"))
 	if reply != nil {
@@ -162,7 +162,7 @@ func (t *monitorTUI) collectData() {
 
 var lastOps int64
 
-func (t *monitorTUI) parseInfo(info string) {
+func (t *cliTUI) parseInfo(info string) {
 	lines := strings.Split(info, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -183,19 +183,19 @@ func (t *monitorTUI) parseInfo(info string) {
 	}
 }
 
-func (t *monitorTUI) executeCmd(cmd string) {
+func (t *cliTUI) executeCmd(cmd string) {
 	parts := parseLine(cmd)
 	if len(parts) == 0 { t.cmdOutput = "Error: empty command"; return }
 	reply := t.c.Send(parts)
 	t.cmdOutput = formatReply(reply)
 }
 
-func (t *monitorTUI) render() {
+func (t *cliTUI) render() {
 	sb := &strings.Builder{}
 	sb.WriteString("\033[H\033[J") // home + clear
 
 	// Header bar
-	header := fmt.Sprintf(" Godis %s%sMonitor%s   %sQ:%s quit  |  Type a redis command below",
+	header := fmt.Sprintf(" Godis %s%sCLI%s   %sQ:%s quit  |  Type a redis command below",
 		reset, white, reset, dim, reset)
 	sb.WriteString(bgPurple + white + bold + " " + header + reset + "\n")
 
@@ -278,7 +278,7 @@ func (t *monitorTUI) render() {
 	fmt.Print(sb.String())
 }
 
-func (t *monitorTUI) renderSparkline(sb *strings.Builder, title string, data []int64, width, height int) {
+func (t *cliTUI) renderSparkline(sb *strings.Builder, title string, data []int64, width, height int) {
 	sparkW := width - 5
 	if sparkW < 5 { sparkW = 5 }
 
