@@ -8,14 +8,8 @@
 - feat: Prometheus metrics with hot/big key monitoring (redis_exporter compatible)
 - feat: `--cli` flag for built-in redis-cli (supports `-h`, `-p`, `-a` flags)
 - feat: `--web` flag for web dashboard with Fluent UI (query + monitoring)
+- feat: `--monitor` flag for TUI dashboard with real-time charts (ANSI terminal)
 - feat: Entra ID (Azure AD) token-based authentication with JWKS validation
-- build: Docker buildx layer caching (type=gha,mode=max)
-- feat: `--cli` with SUBSCRIBE/PSUBSCRIBE support for real-time push messages
-- perf: concurrent TCC — parallel prepare/commit/rollback across nodes (goroutines + sync.WaitGroup)
-- perf: RelayWorkerPool — channel-based goroutine pool per peer for async relay
-- perf: parallel relay helper with early-error cancellation (context cancellation)
-- config: add cluster.worker_pool and cluster.relay_parallel options (default: true)
-- fix: FT.SEARCH response format now includes scores per Redis Stack spec
 - fix: auto-index string SET keys via search.IndexDocByPrefix
 - fix: auto-remove DEL keys from search indexes via search.RemoveDocByPrefix
 - docs: Prometheus monitoring section in EN, CN, JA, FI READMEs

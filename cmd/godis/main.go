@@ -43,7 +43,6 @@ func fileExists(filename string) bool {
 	info, err := os.Stat(filename)
 	return err == nil && !info.IsDir()
 }
-
 func main() {
 	// Check for hidden flags before any other setup
 	for _, arg := range os.Args[1:] {
@@ -53,6 +52,10 @@ func main() {
 		}
 		if arg == "--web" {
 			startWebDashboard()
+			return
+		}
+		if arg == "--monitor" {
+			startMonitor()
 			return
 		}
 	}
@@ -178,4 +181,47 @@ func startWebDashboard() {
 }
 
 // Dependencies used by startWebDashboard
-var _ = web.RecordKeyAccess
+
+func startMonitor() {
+	slog.Info("starting TUI monitor")
+
+	// Parse connection flags
+	serverHost := "127.0.0.1"
+	serverPort := 6399
+	password := ""
+	for i, arg := range os.Args[1:] {
+		if arg == "--server-host" && i+1 < len(os.Args[1:]) {
+			serverHost = os.Args[1:][i+1]
+		}
+		if arg == "--server-port" && i+1 < len(os.Args[1:]) {
+			if p, err := strconv.Atoi(os.Args[1:][i+1]); err == nil {
+				serverPort = p
+			}
+		}
+		if arg == "-a" && i+1 < len(os.Args[1:]) {
+			password = os.Args[1:][i+1]
+		}
+	}
+
+	serverAddr := net.JoinHostPort(serverHost, strconv.Itoa(serverPort))
+	slog.Info("connecting to godis server", "addr", serverAddr)
+
+	c, err := rclient.MakeClient(serverAddr)
+	if err != nil {
+		slog.Error(fmt.Sprintf("failed to connect to godis: %v", err))
+		os.Exit(1)
+	}
+	c.Start()
+	defer c.Close()
+
+	if password != "" {
+		reply := c.Send(utils.ToCmdLine("AUTH", password))
+		if isError(reply) {
+			slog.Error(fmt.Sprintf("AUTH failed: %s", formatReply(reply)))
+			os.Exit(1)
+		}
+	}
+
+	flags := cliFlags{host: serverHost, port: serverPort, auth: password}
+	runMonitor(c, flags)
+}
