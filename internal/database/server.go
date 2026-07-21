@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime/debug"
@@ -86,7 +87,11 @@ func NewStandaloneServer() *Server {
 		// load rdb
 		err := server.loadRdbFile()
 		if err != nil {
-			slog.Error(err.Error())
+			if errors.Is(err, os.ErrNotExist) {
+				slog.Debug("rdb file not found, starting fresh", "path", config.Properties.RDBFilename)
+			} else {
+				slog.Error(err.Error())
+			}
 		}
 	}
 	server.slaveStatus = initReplSlaveStatus()

@@ -5,11 +5,21 @@
 ### Features
 - feat: add Helm chart, K8s operator, multi-arch Docker images
 - feat(release): build and push multi-arch Docker image to GHCR
+- feat: Prometheus metrics with hot/big key monitoring (redis_exporter compatible)
+- feat: `--cli` flag for built-in redis-cli (supports `-h`, `-p`, `-a` flags)
 
 ### Improvements
 - refactor: restructure project to Go Project Layout
 - cleanup: remove legacy .conf, merge build scripts into Makefile
 - chore: rename module to github.com/Hoverhuang-er/godis
+- build: GOEXPERIMENT=greenteagc for GC tuning (GCPercent=40, thread pinning)
+- build: GOAMD64=v3 for x86-64 SIMD (AVX2, AVX, FMA, BMI instruction set)
+- build: greenteagc runtime init now correctly imported and activated
+- build: Docker buildx layer caching (type=gha,mode=max)
+- docs: Prometheus monitoring section in EN, CN, JA, FI READMEs
+- docs: fix language links (blob/master/ → blob/master/docs/)
+- docs: add root README.md symlink for GitHub homepage rendering
+- config: Dir default fallback moved into populateFromViper for hot-reload support
 
 ### Fixes
 - fix: add riscv64 support to boltdb/bolt via local patch
@@ -18,6 +28,8 @@
 - fix(release): upload-checksums job indentation
 - fix(release): add packages: write permission for GHCR push
 - Fix test.yml: add GOEXPERIMENT=jsonv2 at step level
+- fix: suppress spurious "open rdb file failed" error on fresh startup
+- fix: error wrapping in loadRdbFile (use %w for errors.Is compatibility)
 
 ### Previous Releases
 

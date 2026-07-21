@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -41,6 +42,14 @@ func fileExists(filename string) bool {
 }
 
 func main() {
+	// Check for --cli flag before any other setup
+	for _, arg := range os.Args[1:] {
+		if arg == "--cli" {
+			runCLI()
+			return
+		}
+	}
+
 	print(banner)
 	logger.Setup(&logger.Settings{
 		Path:       "logs",
