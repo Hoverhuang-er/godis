@@ -14,6 +14,7 @@ import (
 	"github.com/Hoverhuang-er/godis/internal/interface/database"
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/Hoverhuang-er/godis/internal/monitoring"
 	"github.com/Hoverhuang-er/godis/internal/pubsub"
 	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 	"log/slog"
@@ -24,25 +25,24 @@ var godisVersion = "1.3.1" // do not modify
 var connIDCounter int64
 
 // Server is a redis-server with full capabilities including multiple database, rdb loader, replication
+// Server is a redis-server with full capabilities
 type Server struct {
 	dbSet []*atomic.Value // *DB
 
-	// handle publish/subscribe
-	hub *pubsub.Hub
-	// handle aof persistence
-	persister *aof.Persister
+	hub        *pubsub.Hub
+	persister  *aof.Persister
 
-	// for replication
 	role         int32
 	slaveStatus  *slaveStatus
 	masterStatus *masterStatus
 
-	// hooks
 	insertCallback database.KeyEventCallback
 	deleteCallback database.KeyEventCallback
 
-	// slow log record
 	slogLogger *SlowLogger
+
+	// Prometheus metrics
+	metrics *monitoring.Metrics
 }
 
 func fileExists(filename string) bool {
@@ -92,10 +92,16 @@ func NewStandaloneServer() *Server {
 	server.slaveStatus = initReplSlaveStatus()
 	server.initMasterStatus()
 	server.startReplCron()
-	server.role = masterRole // The initialization process does not require atomicity
+	server.role = masterRole
 
 	// record slow log
 	server.slogLogger = NewSlowLogger(config.Properties.SlowLogMaxLen, config.Properties.SlowLogSlowerThan)
+
+	// Initialize Prometheus metrics
+	if config.Properties.PrometheusEnabled {
+		server.metrics = monitoring.New(server.getDBStats)
+		monitoring.StartMetricsServer(server.metrics)
+	}
 
 	return server
 }
@@ -105,12 +111,17 @@ func NewStandaloneServer() *Server {
 func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.Reply) {
 	defer func() {
 		if err := recover(); err != nil {
-			slog.Warn(fmt.Sprintf("error occurs: %v\n%s", err, string(debug.Stack())))
+			slog.Warn("error occurs: %v\n%s", err, string(debug.Stack()))
 			result = &protocol.UnknownErrReply{}
 		}
 	}()
 	// Record the start time of command execution
 	GodisExecCommandStartUnixTime := time.Now()
+	// Increment command counter for Prometheus metrics
+	if server.metrics != nil {
+		server.metrics.IncrCommands()
+	}
+
 
 	cmdName := strings.ToLower(string(cmdLine[0]))
 	// ping
@@ -167,7 +178,6 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 	// read only slave
 	role := atomic.LoadInt32(&server.role)
 	if role == slaveRole && !c.IsMaster() {
-		// only allow read only command, forbid all special commands except `auth` and `slaveof`
 		if !isReadOnlyCommand(cmdName) {
 			return protocol.MakeErrReply("READONLY You can't write against a read only slave.")
 		}
@@ -187,7 +197,6 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 		if !config.Properties.AppendOnly {
 			return protocol.MakeErrReply("AppendOnly is false, you can't rewrite aof file")
 		}
-		// aof.go imports router.go, router.go cannot import BGRewriteAOF from aof.go
 		return BGRewriteAOF(server, cmdLine[1:])
 	} else if cmdName == "rewriteaof" {
 		if !config.Properties.AppendOnly {
@@ -226,13 +235,18 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 	} else if cmdName == "psync" {
 		return server.execPSync(c, cmdLine[1:])
 	}
-	// todo: support multi database transaction
 
 	// normal commands
 	dbIndex := c.GetDBIndex()
 	selectedDB, errReply := server.selectDB(dbIndex)
 	if errReply != nil {
 		return errReply
+	}
+	// Record key access for hot key tracking
+	if server.metrics != nil {
+		for i := 1; i < len(cmdLine); i++ {
+			server.metrics.RecordKeyAccess(string(cmdLine[i]), dbIndex)
+		}
 	}
 
 	exec := selectedDB.Exec(c, cmdLine)
@@ -241,19 +255,41 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 	return exec
 }
 
-// AfterClientClose does some clean after client close connection
-func (server *Server) AfterClientClose(c redis.Connection) {
-	pubsub.UnsubscribeAll(server.hub, c)
+// GetMetrics returns the Prometheus metrics instance.
+func (server *Server) GetMetrics() *monitoring.Metrics {
+	return server.metrics
 }
+
 
 // Close graceful shutdown database
 func (server *Server) Close() {
-	// stop slaveStatus first
 	server.slaveStatus.close()
 	if server.persister != nil {
 		server.persister.Close()
 	}
 	server.stopMaster()
+}
+func (server *Server) AfterClientClose(c redis.Connection) {
+	pubsub.UnsubscribeAll(server.hub, c)
+	if server.metrics != nil {
+		server.metrics.DecrConnections()
+	}
+}
+
+// getDBStats collects per-database key and expiry counts for Prometheus metrics.
+func (server *Server) getDBStats() []monitoring.DBStat {
+	stats := make([]monitoring.DBStat, 0, len(server.dbSet))
+	for i, holder := range server.dbSet {
+		db := holder.Load().(*DB)
+		keys := int64(db.data.Len())
+		expires := int64(db.ttlMap.Len())
+		stats = append(stats, monitoring.DBStat{
+			Index:   i,
+			Keys:    keys,
+			Expires: expires,
+		})
+	}
+	return stats
 }
 
 func execSelect(c redis.Connection, mdb *Server, args [][]byte) redis.Reply {

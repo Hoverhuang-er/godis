@@ -69,7 +69,10 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 	}
 
 	client := connection.NewConn(conn)
-	h.activeConn.Store(client, struct{}{})
+	// Track connection for Prometheus metrics
+	if srv, ok := h.db.(*database.Server); ok && srv.GetMetrics() != nil {
+		srv.GetMetrics().IncrConnections()
+	}
 
 	ch := parser.ParseStream(conn)
 	for payload := range ch {

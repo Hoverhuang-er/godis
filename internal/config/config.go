@@ -45,6 +45,9 @@ type ServerProperties struct {
 	ReplTimeout       int    `cfg:"repl-timeout" toml:"repl_timeout"`
 	UseGnet           bool   `cfg:"use-gnet" toml:"use_gnet"`
 
+	PrometheusEnabled bool `cfg:"prometheus-enabled" toml:"prometheus_enabled"`
+	PrometheusPort    int  `cfg:"prometheus-port" toml:"prometheus_port"`
+
 	ConfigMode string `cfg:"-" toml:"config_mode"` // "standalone" or "cluster", auto-detected
 
 	SlowLogSlowerThan int64 `cfg:"slowlog-log-slower-than" toml:"slowlog_log_slower_than"`
