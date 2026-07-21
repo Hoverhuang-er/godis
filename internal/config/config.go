@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bufio"
 	"io"
 	"net"
 	"os"
@@ -100,8 +99,7 @@ func init() {
 	}
 }
 
-// SetupConfig loads configuration from the given file.
-// Auto-detects format: .toml files use TOML parsing, .conf/.txt files use legacy format.
+// SetupConfig loads configuration from the given TOML-format file.
 func SetupConfig(configFilename string) {
 	Properties.RunID = utils.RandString(40)
 
@@ -112,11 +110,7 @@ func SetupConfig(configFilename string) {
 	}
 	configFilePath = absPath
 
-	if strings.HasSuffix(configFilename, ".toml") {
-		loadTomlConfig(configFilename)
-	} else {
-		loadLegacyConfig(configFilename)
-	}
+	loadTomlConfig(configFilename)
 
 	if Properties.Dir == "" {
 		Properties.Dir = "."
@@ -355,85 +349,6 @@ func applyTomlFlat(flatMap map[string]interface{}) {
 	}
 }
 
-func loadLegacyConfig(filename string) {
-	file, err := os.Open(filename)
-	if err != nil {
-		slog.Warn("config file not found, using defaults", "path", filename)
-		return
-	}
-	defer file.Close()
-	parsed := parse(file)
-	if parsed != nil {
-		pv := reflect.ValueOf(parsed).Elem()
-		pp := reflect.ValueOf(Properties).Elem()
-		for i := range pv.NumField() {
-			field := pv.Field(i)
-			if !field.IsZero() {
-				pp.Field(i).Set(field)
-			}
-		}
-	}
-}
-
-func parse(src io.Reader) *ServerProperties {
-	config := &ServerProperties{}
-
-	rawMap := make(map[string]string)
-	scanner := bufio.NewScanner(src)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if len(line) > 0 && strings.TrimLeft(line, " ")[0] == '#' {
-			continue
-		}
-		pivot := strings.IndexAny(line, " ")
-		if pivot > 0 && pivot < len(line)-1 {
-			key := line[0:pivot]
-			value := strings.Trim(line[pivot+1:], " ")
-			rawMap[strings.ToLower(key)] = value
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		slog.Error(err.Error())
-	}
-
-	t := reflect.TypeOf(config)
-	v := reflect.ValueOf(config)
-	n := t.Elem().NumField()
-	for i := range n {
-		field := t.Elem().Field(i)
-		fieldVal := v.Elem().Field(i)
-		key, ok := field.Tag.Lookup("cfg")
-		if !ok || strings.TrimLeft(key, " ") == "" {
-			key = field.Name
-		}
-		value, ok := rawMap[strings.ToLower(key)]
-		if ok {
-			switch field.Type.Kind() {
-			case reflect.String:
-				fieldVal.SetString(value)
-			case reflect.Int:
-				intValue, err := strconv.ParseInt(value, 10, 64)
-				if err == nil {
-					fieldVal.SetInt(intValue)
-				}
-			case reflect.Int64:
-				intValue, err := strconv.ParseInt(value, 10, 64)
-				if err == nil {
-					fieldVal.SetInt(intValue)
-				}
-			case reflect.Bool:
-				boolValue := "yes" == value
-				fieldVal.SetBool(boolValue)
-			case reflect.Slice:
-				if field.Type.Elem().Kind() == reflect.String {
-					slice := strings.Split(value, ",")
-					fieldVal.Set(reflect.ValueOf(slice))
-				}
-			}
-		}
-	}
-	return config
-}
 
 func GetTmpDir() string {
 	return Properties.Dir + "/tmp"
@@ -441,17 +356,16 @@ func GetTmpDir() string {
 
 // DetectConfigFile finds the appropriate config file.
 // Priority:
-//  1. CONFIG env var (explicit path, any format)
+//  1. CONFIG env var (explicit path)
 //  2. standalone.toml (standalone mode)
 //  3. cluster.toml (cluster mode)
-//  4. redis.conf (legacy)
 func DetectConfigFile() (string, bool) {
 	configFile := os.Getenv("CONFIG")
 	if configFile != "" {
 		return configFile, true
 	}
 
-	for _, candidate := range []string{"standalone.toml", "cluster.toml", "redis.conf"} {
+	for _, candidate := range []string{"standalone.toml", "cluster.toml"} {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, true
 		}

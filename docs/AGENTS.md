@@ -50,26 +50,23 @@ internal/           — Private application code
   pubsub/           — Channel-based pub/sub hub
   redis/            — Protocol layer (parser/, protocol/, connection/, server/, client/)
   tcp/              — Generic TCP server (goroutine-per-connection accept loop)
-config/             — Configuration file templates (standalone.toml, cluster.toml, redis.conf, ...)
-scripts/            — Build and release scripts
+config/             — Configuration file templates (standalone.toml, cluster.toml)
+Makefile              — Build automation (build, test, release, clean)
 docs/               — Documentation (README*, CHANGELOGS, AGENTS.md)
 testdata/           — Test fixtures (test.rdb)
 ```
 
 ---
 
-## Development Commands
-
 | Command | Purpose |
 |---------|---------|
-| `go build -o godis ./cmd/godis/` | Build binary |
-| `go run ./cmd/godis/` | Run with default config (redis.conf) |
-| `CONFIG=my.conf go run ./cmd/godis/` | Run with custom config |
-| `go test ./...` | Run all tests |
-| `go test -v -coverprofile=profile.cov ./...` | Tests with coverage |
-| `go test -run TestSet ./internal/database/` | Run specific test |
-| `./scripts/build.sh` | Cross-compile release (7 OS/arch targets) |
-| `./scripts/build-all.sh` | Quick cross-compile (5 targets) |
+| `make` | Build binary for current platform |
+| `make test` | Run all tests |
+| `make run` | Run with default config |
+| `make release` | Cross-compile for all 7 target platforms |
+| `CONFIG=config/cluster.toml make run` | Run with custom config |
+| `go test -run TestSet ./internal/database/` | Run specific test (verbose) |
+| `make clean` | Remove build artifacts |
 
 **Build tags** (optional): `-tags greenteagc` enables GC tuning (GCPercent=40, GOMAXPROCS=NumCPU, thread pinning).
 **Env**: `GOEXPERIMENT=jsonv2` used in releases.

@@ -1,28 +1,31 @@
-# Binaries for programs and plugins
+# Binaries
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+/godis
+
+# Build output
+target/
+
+# Coverage
+*.out
+coverage.txt
+
+# Persistence artifacts
 *.aof
 *.rdb
 
-# Test binary, build with `go test -c`
+# Test binary
 *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
-target/
-coverage.txt
+# Runtime data
 node1/
 node2/
-
 logs
 
-# jetbrains
+# IDE
 .idea
 *.iml
-redis2.conf
-
-# godis binary
-/godis
+.vscode/
