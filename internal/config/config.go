@@ -52,12 +52,14 @@ type ServerProperties struct {
 	SlowLogSlowerThan int64 `cfg:"slowlog-log-slower-than" toml:"slowlog_log_slower_than"`
 	SlowLogMaxLen     int   `cfg:"slowlog-max-len" toml:"slowlog_max_len"`
 
-	ClusterEnable      bool   `cfg:"cluster-enable" toml:"cluster_enable"`
-	ClusterAsSeed      bool   `cfg:"cluster-as-seed" toml:"cluster_as_seed"`
-	ClusterSeed        string `cfg:"cluster-seed" toml:"cluster_seed"`
-	RaftListenAddr     string `cfg:"raft-listen-address" toml:"raft_listen_address"`
-	RaftAdvertiseAddr  string `cfg:"raft-advertise-address" toml:"raft_advertise_address"`
-	MasterInCluster    string `cfg:"master-in-cluster" toml:"master_in_cluster"`
+	ClusterEnable        bool   `cfg:"cluster-enable" toml:"cluster_enable"`
+	ClusterAsSeed        bool   `cfg:"cluster-as-seed" toml:"cluster_as_seed"`
+	ClusterSeed          string `cfg:"cluster-seed" toml:"cluster_seed"`
+	RaftListenAddr       string `cfg:"raft-listen-address" toml:"raft_listen_address"`
+	RaftAdvertiseAddr    string `cfg:"raft-advertise-address" toml:"raft_advertise_address"`
+	MasterInCluster      string `cfg:"master-in-cluster" toml:"master_in_cluster"`
+	ClusterWorkerPool    bool   `cfg:"cluster-worker-pool" toml:"cluster_worker_pool"`
+	ClusterRelayParallel bool   `cfg:"cluster-relay-parallel" toml:"cluster_relay_parallel"`
 }
 
 var configFilePath string
@@ -89,18 +91,19 @@ var EachTimeServerInfo *ServerInfo
 
 func init() {
 	Properties = &ServerProperties{
-		Bind:              "0.0.0.0",
-		Port:              6399,
-		MaxClients:        128,
-		Databases:         16,
-		AppendFsync:       "everysec",
-		AofUseRdbPreamble: true,
-		SlowLogSlowerThan: 10000,
-		SlowLogMaxLen:     128,
-		PrometheusEnabled: true,
-		PrometheusPort:    9121,
+		Bind:                 "0.0.0.0",
+		Port:                 6399,
+		MaxClients:           128,
+		Databases:            16,
+		AppendFsync:          "everysec",
+		AofUseRdbPreamble:    true,
+		SlowLogSlowerThan:    10000,
+		SlowLogMaxLen:        128,
+		PrometheusEnabled:    true,
+		PrometheusPort:       9121,
+		ClusterWorkerPool:    true,
+		ClusterRelayParallel: true,
 	}
-	EachTimeServerInfo = &ServerInfo{}
 }
 
 //go:embed default.toml
@@ -172,6 +175,9 @@ func populateFromViper(v *viper.Viper) {
 	Properties.RaftListenAddr = getStr(v, "cluster.raft_listen_address", Properties.RaftListenAddr)
 	Properties.RaftAdvertiseAddr = getStr(v, "cluster.raft_advertise_address", Properties.RaftAdvertiseAddr)
 	Properties.MasterInCluster = getStr(v, "cluster.master_in_cluster", Properties.MasterInCluster)
+
+	Properties.ClusterWorkerPool = getBool(v, "cluster.worker_pool", Properties.ClusterWorkerPool)
+	Properties.ClusterRelayParallel = getBool(v, "cluster.relay_parallel", Properties.ClusterRelayParallel)
 
 	Properties.PrometheusEnabled = getBool(v, "monitoring.prometheus_enabled", Properties.PrometheusEnabled)
 	Properties.PrometheusPort = getInt(v, "monitoring.prometheus_port", Properties.PrometheusPort)

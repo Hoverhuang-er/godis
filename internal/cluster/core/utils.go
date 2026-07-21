@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"hash/crc32"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
@@ -112,4 +114,173 @@ func (cluster *Cluster) LocalExists(keys []string) []string {
 		}
 	}
 	return exists
+}
+
+// parallelRelay sends commands to multiple nodes concurrently and returns results.
+// Uses goroutines + channels for parallel execution.
+func (cluster *Cluster) parallelRelay(
+	routeMap map[string]CmdLine,
+	c redis.Connection,
+) map[string]redis.Reply {
+	type nodeResult struct {
+		node   string
+		reply  redis.Reply
+	}
+
+	results := make(map[string]redis.Reply)
+	resultCh := make(chan nodeResult, len(routeMap))
+
+	var wg sync.WaitGroup
+	for node, cmdLine := range routeMap {
+		wg.Add(1)
+		node := node
+		cmdLine := cmdLine
+		go func() {
+			defer wg.Done()
+			reply := cluster.Relay(node, c, cmdLine)
+			resultCh <- nodeResult{node: node, reply: reply}
+		}()
+	}
+	wg.Wait()
+	close(resultCh)
+
+	for r := range resultCh {
+		results[r.node] = r.reply
+	}
+	return results
+}
+
+// parallelRelayWithError sends commands to multiple nodes concurrently.
+// Returns on the first error reply, or aggregates all results.
+func (cluster *Cluster) parallelRelayWithError(
+	routeMap map[string]CmdLine,
+	c redis.Connection,
+) (map[string]redis.Reply, error) {
+	type nodeResult struct {
+		node  string
+		reply redis.Reply
+		err   error
+	}
+
+	results := make(map[string]redis.Reply)
+	resultCh := make(chan nodeResult, len(routeMap))
+	errCh := make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for node, cmdLine := range routeMap {
+		wg.Add(1)
+		node := node
+		cmdLine := cmdLine
+		go func() {
+			defer wg.Done()
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			reply := cluster.Relay(node, c, cmdLine)
+			err := protocol.Try2ErrorReply(reply)
+			if err != nil {
+				select {
+				case errCh <- err:
+					cancel()
+				default:
+				}
+				return
+			}
+			resultCh <- nodeResult{node: node, reply: reply}
+		}()
+	}
+	wg.Wait()
+	close(resultCh)
+	close(errCh)
+
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
+
+	for r := range resultCh {
+		results[r.node] = r.reply
+	}
+	return results, nil
+}
+
+// RelayWorkerPool manages goroutine workers for processing relay requests.
+// Each peer node gets a dedicated goroutine with a buffered channel for async relay.
+type RelayWorkerPool struct {
+	workers map[string]chan relayTask
+	wg      sync.WaitGroup
+	cluster *Cluster
+}
+
+type relayTask struct {
+	cmdLine CmdLine
+	result  chan relayResult
+}
+
+type relayResult struct {
+	reply redis.Reply
+	err   error
+}
+
+const relayChannelSize = 64
+
+// NewRelayWorkerPool creates a pool with one goroutine per peer.
+func (cluster *Cluster) NewRelayWorkerPool() *RelayWorkerPool {
+	p := &RelayWorkerPool{
+		workers: make(map[string]chan relayTask),
+		cluster: cluster,
+	}
+	return p
+}
+
+// StartWorker starts a worker goroutine for the given peer.
+func (p *RelayWorkerPool) StartWorker(peerAddr string) {
+	if _, ok := p.workers[peerAddr]; ok {
+		return
+	}
+	ch := make(chan relayTask, relayChannelSize)
+	p.workers[peerAddr] = ch
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		for task := range ch {
+			// Borrow connection once, process multiple tasks
+			cli, err := p.cluster.connections.BorrowPeerClient(peerAddr)
+			if err != nil {
+				task.result <- relayResult{err: err}
+				continue
+			}
+			reply := cli.Send(task.cmdLine)
+			_ = p.cluster.connections.ReturnPeerClient(cli)
+			task.result <- relayResult{reply: reply}
+		}
+	}()
+}
+
+// SendAsync sends a command to a peer via the worker pool.
+func (p *RelayWorkerPool) SendAsync(peerAddr string, cmdLine CmdLine) relayResult {
+	ch, ok := p.workers[peerAddr]
+	if !ok {
+		p.StartWorker(peerAddr)
+		ch = p.workers[peerAddr]
+	}
+	task := relayTask{
+		cmdLine: cmdLine,
+		result:  make(chan relayResult, 1),
+	}
+	ch <- task
+	return <-task.result
+}
+
+// Stop closes all workers and waits for them to finish.
+func (p *RelayWorkerPool) Stop() {
+	for _, ch := range p.workers {
+		close(ch)
+	}
+	p.wg.Wait()
 }

@@ -31,3 +31,10 @@ max_len = 128
 [monitoring]
 prometheus_enabled = true
 prometheus_port = 9121
+
+[cluster]
+# Enable worker pool for parallel relay processing (cluster mode only)
+worker_pool = true
+
+# Enable parallel relay for multi-node transactions (cluster mode only)
+relay_parallel = true

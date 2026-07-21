@@ -17,6 +17,10 @@
 - build: greenteagc runtime init now correctly imported and activated
 - build: Docker buildx layer caching (type=gha,mode=max)
 - feat: `--cli` with SUBSCRIBE/PSUBSCRIBE support for real-time push messages
+- perf: concurrent TCC — parallel prepare/commit/rollback across nodes (goroutines + sync.WaitGroup)
+- perf: RelayWorkerPool — channel-based goroutine pool per peer for async relay
+- perf: parallel relay helper with early-error cancellation (context cancellation)
+- config: add cluster.worker_pool and cluster.relay_parallel options (default: true)
 - docs: Prometheus monitoring section in EN, CN, JA, FI READMEs
 - docs: fix language links (blob/master/ → blob/master/docs/)
 - docs: add root README.md symlink for GitHub homepage rendering
