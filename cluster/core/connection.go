@@ -8,12 +8,12 @@ import (
 	"github.com/hdt3213/godis/config"
 	"github.com/hdt3213/godis/datastruct/dict"
 	"github.com/hdt3213/godis/interface/redis"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/pool"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/redis/client"
 	"github.com/hdt3213/godis/redis/parser"
 	"github.com/hdt3213/godis/redis/protocol"
+	"log/slog"
 )
 
 // ConnectionFactory manages connection with peer nodes in cluster
@@ -76,7 +76,7 @@ func (factory *defaultClientFactory) BorrowPeerClient(peerAddr string) (peerClie
 			return factory.NewPeerClient(peerAddr)
 		}
 		finalizer := func(x interface{}) {
-			logger.Debug("destroy client")
+			slog.Debug("destroy client")
 			cli, ok := x.(client.Client)
 			if !ok {
 				return

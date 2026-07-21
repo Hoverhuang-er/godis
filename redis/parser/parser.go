@@ -4,14 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"runtime/debug"
 	"strconv"
 	"strings"
 
 	"github.com/hdt3213/godis/interface/redis"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/redis/protocol"
+	"log/slog"
 )
 
 // Payload stores redis.Reply or error
@@ -63,7 +64,7 @@ func ParseOne(data []byte) (redis.Reply, error) {
 func parse0(rawReader io.Reader, ch chan<- *Payload) {
 	defer func() {
 		if err := recover(); err != nil {
-			logger.Error(err, string(debug.Stack()))
+			slog.Error(fmt.Sprintf("%v", err), "stack", string(debug.Stack()))
 		}
 	}()
 	reader := bufio.NewReader(rawReader)

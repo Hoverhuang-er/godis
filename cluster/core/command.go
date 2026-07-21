@@ -9,8 +9,8 @@ import (
 	"github.com/hdt3213/godis/config"
 	"github.com/hdt3213/godis/database"
 	"github.com/hdt3213/godis/interface/redis"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/redis/protocol"
+	"log/slog"
 )
 
 // CmdLine is alias for [][]byte, represents a command line
@@ -31,7 +31,7 @@ func RegisterCmd(name string, cmd CmdFunc) {
 func (cluster *Cluster) Exec(c redis.Connection, cmdLine [][]byte) (result redis.Reply) {
 	defer func() {
 		if err := recover(); err != nil {
-			logger.Warn(fmt.Sprintf("error occurs: %v\n%s", err, string(debug.Stack())))
+			slog.Warn(fmt.Sprintf("error occurs: %v\n%s", err, string(debug.Stack())))
 			result = &protocol.UnknownErrReply{}
 		}
 	}()

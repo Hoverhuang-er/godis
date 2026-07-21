@@ -1,13 +1,14 @@
 package raft
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"time"
+
+	jsonv2 "encoding/json/v2"
 
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
@@ -190,7 +191,7 @@ func (node *Node) HandleEvict(redisAddr string) error {
 }
 
 func (node *Node) Propose(event *LogEntry) (uint64, error) {
-	bin, err := json.Marshal(event)
+	bin, err := jsonv2.Marshal(event)
 	if err != nil {
 		return 0, fmt.Errorf("marshal event failed: %v", err)
 	}

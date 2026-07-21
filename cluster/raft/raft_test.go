@@ -2,10 +2,11 @@ package raft
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"os"
 	"testing"
+
+	jsonv2 "encoding/json/v2"
 
 	"github.com/hashicorp/raft"
 )
@@ -123,7 +124,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			SlotCount: 3,
 		},
 	}
-	data, _ := json.Marshal(entry)
+	data, _ := jsonv2.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 
 	//EventStartMigrate
@@ -136,7 +137,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			Slots:      []uint32{1, 2},
 		},
 	}
-	data, _ = json.Marshal(entry)
+	data, _ = jsonv2.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 
 	//EventFinishMigrate
@@ -149,7 +150,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			Slots:      []uint32{1, 2},
 		},
 	}
-	data, _ = json.Marshal(entry)
+	data, _ = jsonv2.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 
 	//EventFinishFailover
@@ -162,7 +163,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			NewMasterId: "node2",
 		},
 	}
-	data, _ = json.Marshal(entry)
+	data, _ = jsonv2.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 
 	//EventJoin
@@ -173,7 +174,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			Master: "node2",
 		},
 	}
-	data, _ = json.Marshal(entry)
+	data, _ = jsonv2.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 }
 

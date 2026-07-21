@@ -5,8 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hdt3213/godis/lib/logger"
+	"github.com/hdt3213/godis/interface/redis"
 	"github.com/hdt3213/godis/lib/sync/wait"
+	"log/slog"
 )
 
 const (
@@ -42,6 +43,9 @@ type Connection struct {
 
 	// selected db
 	selectedDB int
+
+	// RESP protocol version (2 or 3)
+	respVersion redis.RespVersion
 }
 
 var connPool = sync.Pool{
@@ -75,7 +79,7 @@ func (c *Connection) Close() error {
 func NewConn(conn net.Conn) *Connection {
 	c, ok := connPool.Get().(*Connection)
 	if !ok {
-		logger.Error("connection pool make wrong type")
+		slog.Error("connection pool make wrong type")
 		return &Connection{
 			conn: conn,
 		}
@@ -230,4 +234,14 @@ func (c *Connection) SetMaster() {
 
 func (c *Connection) IsMaster() bool {
 	return c.flags&flagMaster > 0
+}
+
+// GetRespVersion returns the RESP protocol version for this connection
+func (c *Connection) GetRespVersion() redis.RespVersion {
+	return c.respVersion
+}
+
+// SetRespVersion sets the RESP protocol version for this connection
+func (c *Connection) SetRespVersion(v redis.RespVersion) {
+	c.respVersion = v
 }

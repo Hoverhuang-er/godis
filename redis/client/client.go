@@ -2,8 +2,8 @@ package client
 
 import (
 	"errors"
+	"fmt"
 	"github.com/hdt3213/godis/interface/redis"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/sync/wait"
 	"github.com/hdt3213/godis/redis/parser"
 	"github.com/hdt3213/godis/redis/protocol"
@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"log/slog"
 )
 
 const (
@@ -92,7 +93,7 @@ func (client *Client) Close() {
 }
 
 func (client *Client) reconnect() {
-	logger.Info("reconnect with: " + client.addr)
+	slog.Info("reconnect with: " + client.addr)
 	_ = client.conn.Close() // ignore possible errors from repeated closes
 
 	var conn net.Conn
@@ -100,7 +101,7 @@ func (client *Client) reconnect() {
 		var err error
 		conn, err = net.Dial("tcp", client.addr)
 		if err != nil {
-			logger.Error("reconnect error: " + err.Error())
+			slog.Error("reconnect error: " + err.Error())
 			time.Sleep(time.Second)
 			continue
 		} else {
@@ -199,7 +200,7 @@ func (client *Client) finishRequest(reply redis.Reply) {
 	defer func() {
 		if err := recover(); err != nil {
 			debug.PrintStack()
-			logger.Error(err)
+			slog.Error(fmt.Sprintf("%v", err))
 		}
 	}()
 	request := <-client.waitingReqs

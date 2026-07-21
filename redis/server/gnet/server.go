@@ -1,15 +1,16 @@
 package gnet
 
-import (
+import (	"fmt"
+
 	"context"
 	"sync/atomic"
 
 	"github.com/hdt3213/godis/interface/database"
 	"github.com/hdt3213/godis/interface/redis"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/redis/connection"
 	"github.com/hdt3213/godis/redis/parser"
 	"github.com/panjf2000/gnet/v2"
+	"log/slog"
 )
 
 type GnetServer struct {
@@ -43,7 +44,7 @@ func (s *GnetServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 
 func (s *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	if err != nil {
-		logger.Infof("error occurred on connection=%s, %v\n", c.RemoteAddr().String(), err)
+		slog.Info(fmt.Sprintf("error occurred on connection=%s, %v\n", c.RemoteAddr().String(), err))
 	}
 	atomic.AddInt32(&s.connected, -1)
 	conn := c.Context().(redis.Connection)
@@ -55,7 +56,7 @@ func (s *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	conn := c.Context().(redis.Connection)
 	cmdLine, err := parser.ParseV2(c)
 	if err != nil {
-		logger.Infof("parse command line failed: %v", err)
+		slog.Info(fmt.Sprintf("parse command line failed: %v", err))
 		return gnet.Close
 	}
 	if len(cmdLine) == 0 {

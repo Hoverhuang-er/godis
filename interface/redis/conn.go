@@ -1,5 +1,13 @@
 package redis
 
+// RespVersion is the Redis Serialization Protocol version
+type RespVersion int8
+
+const (
+	Resp2 RespVersion = 2
+	Resp3 RespVersion = 3
+)
+
 // Connection represents a connection with redis client
 type Connection interface {
 	Write([]byte) (int, error)
@@ -34,4 +42,7 @@ type Connection interface {
 	IsMaster() bool
 
 	Name() string
+
+	GetRespVersion() RespVersion
+	SetRespVersion(RespVersion)
 }

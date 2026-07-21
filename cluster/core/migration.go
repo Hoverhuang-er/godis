@@ -333,13 +333,13 @@ recvLoop:
 				break recvLoop
 			} else {
 				msg := fmt.Sprintf("migrate error: %s", string(reply.ToBytes()))
-				logger.Errorf(msg)
+				logger.Error(msg)
 				return protocol.MakeErrReply(msg)
 			}
 		case protocol.ErrorReply:
 			// todo: return slot to former host node
 			msg := fmt.Sprintf("migrate error: %s", reply.Error())
-			logger.Errorf(msg)
+			logger.Error(msg)
 			return protocol.MakeErrReply(msg)
 		}
 	}
@@ -365,13 +365,13 @@ recvLoop2:
 				break recvLoop2
 			} else {
 				msg := fmt.Sprintf("migrate error: %s", string(reply.ToBytes()))
-				logger.Errorf(msg)
+				logger.Error(msg)
 				return protocol.MakeErrReply(msg)
 			}
 		case protocol.ErrorReply:
 			// todo: return slot to former host node
 			msg := fmt.Sprintf("migrate error: %s", reply.Error())
-			logger.Errorf(msg)
+			logger.Error(msg)
 			return protocol.MakeErrReply(msg)
 		}
 	}

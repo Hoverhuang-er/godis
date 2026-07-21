@@ -2,7 +2,7 @@ package sortedset
 
 import (
 	"math/bits"
-	"math/rand"
+	"math/rand/v2"
 )
 
 const (

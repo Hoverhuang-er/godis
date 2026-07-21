@@ -2,9 +2,11 @@ package timewheel
 
 import (
 	"container/list"
-	"github.com/hdt3213/godis/lib/logger"
+	"fmt"
 	"sync"
 	"time"
+
+	"log/slog"
 )
 
 type location struct {
@@ -131,7 +133,7 @@ func (tw *TimeWheel) scanAndRunTask(l *list.List) {
 		go func(job func()) {
 			defer func() {
 				if err := recover(); err != nil {
-					logger.Error(err)
+					slog.Error(fmt.Sprintf("%v", err))
 				}
 			}()
 			job()

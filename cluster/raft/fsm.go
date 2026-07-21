@@ -1,9 +1,10 @@
 package raft
 
 import (
-	"encoding/json"
 	"io"
 	"sync"
+
+	jsonv2 "encoding/json/v2"
 
 	"github.com/hashicorp/raft"
 )
@@ -81,12 +82,12 @@ type LogEntry struct {
 }
 
 // Apply is called once a log entry is committed by a majority of the cluster.
-func (fsm *FSM) Apply(log *raft.Log) interface{} {
+func (fsm *FSM) Apply(log *raft.Log) any {
 	fsm.mu.Lock()
 	defer fsm.mu.Unlock()
 
 	entry := &LogEntry{}
-	err := json.Unmarshal(log.Data, entry)
+	err := jsonv2.Unmarshal(log.Data, entry)
 	if err != nil {
 		panic(err)
 	}
@@ -135,7 +136,7 @@ type FSMSnapshot struct {
 
 func (snapshot *FSMSnapshot) Persist(sink raft.SnapshotSink) error {
 	err := func() error {
-		data, err := json.Marshal(snapshot)
+		data, err := jsonv2.Marshal(snapshot)
 		if err != nil {
 			return err
 		}
@@ -183,7 +184,7 @@ func (fsm *FSM) Restore(src io.ReadCloser) error {
 		return err
 	}
 	snapshot := &FSMSnapshot{}
-	err = json.Unmarshal(data, snapshot)
+	err = jsonv2.Unmarshal(data, snapshot)
 	if err != nil {
 		return err
 	}

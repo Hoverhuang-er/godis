@@ -1,15 +1,32 @@
 package logger
 
 import (
-	"fmt"
+	"context"
 	"io"
-	"log"
+	"log/slog"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
-	"sync"
-	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+const logFileName = "godis.log"
+
+// Output levels
+type LogLevel int
+
+const (
+	DEBUG LogLevel = iota
+	INFO
+	WARNING
+	ERROR
+	FATAL
+)
+
+const (
+	defaultCallerDepth = 2
 )
 
 // Settings stores config for Logger
@@ -20,178 +37,305 @@ type Settings struct {
 	TimeFormat string `yaml:"time-format"`
 }
 
-type LogLevel int
-
-// Output levels
-const (
-	DEBUG LogLevel = iota
-	INFO
-	WARNING
-	ERROR
-	FATAL
-)
-
-const (
-	flags              = log.LstdFlags
-	defaultCallerDepth = 2
-	bufferSize         = 1e5
-)
-
-type logEntry struct {
-	msg   string
-	level LogLevel
-}
-
-var (
-	levelFlags = []string{"DEBUG", "INFO", "WARN", "ERROR", "FATAL"}
-)
-
 // ILogger defines the methods that any logger should implement
 type ILogger interface {
 	Output(level LogLevel, callerDepth int, msg string)
 }
 
-// Logger is Logger
+// Logger wraps a zap.Logger for high-performance JSON logging
 type Logger struct {
-	logFile   *os.File
-	logger    *log.Logger
-	entryChan chan *logEntry
-	entryPool *sync.Pool
+	zap  *zap.Logger
+	slog *slog.Logger
 }
 
-var DefaultLogger ILogger = NewStdoutLogger()
+var DefaultLogger ILogger
 
-// NewStdoutLogger creates a logger which print msg to stdout
-func NewStdoutLogger() *Logger {
-	logger := &Logger{
-		logFile:   nil,
-		logger:    log.New(os.Stdout, "", flags),
-		entryChan: make(chan *logEntry, bufferSize),
-		entryPool: &sync.Pool{
-			New: func() interface{} {
-				return &logEntry{}
-			},
-		},
-	}
-	go func() {
-		for e := range logger.entryChan {
-			_ = logger.logger.Output(0, e.msg) // msg includes call stack, no need for calldepth
-			logger.entryPool.Put(e)
-		}
-	}()
-	return logger
-}
-
-// NewFileLogger creates a logger which print msg to stdout and log file
-func NewFileLogger(settings *Settings) (*Logger, error) {
-	fileName := fmt.Sprintf("%s-%s.%s",
-		settings.Name,
-		time.Now().Format(settings.TimeFormat),
-		settings.Ext)
-	logFile, err := mustOpen(fileName, settings.Path)
-	if err != nil {
-		return nil, fmt.Errorf("logging.Join err: %s", err)
-	}
-	mw := io.MultiWriter(os.Stdout, logFile)
-	logger := &Logger{
-		logFile:   logFile,
-		logger:    log.New(mw, "", flags),
-		entryChan: make(chan *logEntry, bufferSize),
-		entryPool: &sync.Pool{
-			New: func() interface{} {
-				return &logEntry{}
-			},
-		},
-	}
-	go func() {
-		for e := range logger.entryChan {
-			logFilename := fmt.Sprintf("%s-%s.%s",
-				settings.Name,
-				time.Now().Format(settings.TimeFormat),
-				settings.Ext)
-			if path.Join(settings.Path, logFilename) != logger.logFile.Name() {
-				logFile, err := mustOpen(logFilename, settings.Path)
-				if err != nil {
-					panic("open log " + logFilename + " failed: " + err.Error())
-				}
-				logger.logFile = logFile
-				logger.logger = log.New(io.MultiWriter(os.Stdout, logFile), "", flags)
-			}
-			_ = logger.logger.Output(0, e.msg) // msg includes call stack, no need for calldepth
-			logger.entryPool.Put(e)
-		}
-	}()
-	return logger, nil
-}
-
-// Setup initializes DefaultLogger
-func Setup(settings *Settings) {
-	logger, err := NewFileLogger(settings)
+func init() {
+	l, err := NewLogger()
 	if err != nil {
 		panic(err)
 	}
-	DefaultLogger = logger
+	DefaultLogger = l
 }
 
-// Output sends a msg to logger
-func (logger *Logger) Output(level LogLevel, callerDepth int, msg string) {
-	var formattedMsg string
-	_, file, line, ok := runtime.Caller(callerDepth)
-	if ok {
-		formattedMsg = fmt.Sprintf("[%s][%s:%d] %s", levelFlags[level], filepath.Base(file), line, msg)
-	} else {
-		formattedMsg = fmt.Sprintf("[%s] %s", levelFlags[level], msg)
+// NewLogger creates a JSON logger writing to both stdout and godis.log.
+// Uses zap for performance with slog compatibility.
+func NewLogger() (*Logger, error) {
+	// Open log file
+	logDir := getDefaultLogDir()
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, err
 	}
-	entry := logger.entryPool.Get().(*logEntry)
-	entry.msg = formattedMsg
-	entry.level = level
-	logger.entryChan <- entry
+	logPath := filepath.Join(logDir, logFileName)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	// Multi-writer: stdout + file
+	mw := io.MultiWriter(os.Stdout, logFile)
+
+	// Zap JSON encoder config
+	encoderCfg := zap.NewProductionEncoderConfig()
+	encoderCfg.TimeKey = "timestamp"
+	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderCfg.CallerKey = "caller"
+	encoderCfg.EncodeCaller = zapcore.ShortCallerEncoder
+
+	core := zapcore.NewCore(
+		zapcore.NewJSONEncoder(encoderCfg),
+		zapcore.AddSync(mw),
+		zapcore.ErrorLevel, // default: only error level
+	)
+
+	zapLogger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
+
+	return &Logger{
+		zap:  zapLogger,
+		slog: slog.New(&zapSlogHandler{zap: zapLogger, enc: zapcore.NewJSONEncoder(encoderCfg)}),
+	}, nil
 }
 
-// Debug logs debug message through DefaultLogger
-func Debug(v ...interface{}) {
-	msg := fmt.Sprintln(v...)
-	DefaultLogger.Output(DEBUG, defaultCallerDepth, msg)
+func getDefaultLogDir() string {
+	// Use ./logs/ relative to working directory
+	if _, err := os.Stat("logs"); err == nil {
+		return "logs"
+	}
+	tmpDir := os.TempDir()
+	return filepath.Join(tmpDir, "godis", "logs")
 }
 
-// Debugf logs debug message through DefaultLogger
-func Debugf(format string, v ...interface{}) {
-	msg := fmt.Sprintf(format, v...)
-	DefaultLogger.Output(DEBUG, defaultCallerDepth, msg)
+// SetLevel dynamically changes the minimum log level.
+// LevelDebug, LevelInfo, LevelWarn, LevelError
+func SetLevel(level slog.Level) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		// Rebuild core with new level
+		var zapLevel zapcore.Level
+		switch level {
+		case slog.LevelDebug:
+			zapLevel = zapcore.DebugLevel
+		case slog.LevelInfo:
+			zapLevel = zapcore.InfoLevel
+		case slog.LevelWarn:
+			zapLevel = zapcore.WarnLevel
+		default:
+			zapLevel = zapcore.ErrorLevel
+		}
+
+		encoderCfg := zap.NewProductionEncoderConfig()
+		encoderCfg.TimeKey = "timestamp"
+		encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+		encoderCfg.CallerKey = "caller"
+		encoderCfg.EncodeCaller = zapcore.ShortCallerEncoder
+
+		logDir := getDefaultLogDir()
+		logPath := filepath.Join(logDir, logFileName)
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return
+		}
+		mw := io.MultiWriter(os.Stdout, logFile)
+
+		core := zapcore.NewCore(
+			zapcore.NewJSONEncoder(encoderCfg),
+			zapcore.AddSync(mw),
+			zapLevel,
+		)
+
+		l.zap = zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
+		l.slog = slog.New(&zapSlogHandler{zap: l.zap, enc: zapcore.NewJSONEncoder(encoderCfg)})
+	}
 }
 
-// Info logs message through DefaultLogger
-func Info(v ...interface{}) {
-	msg := fmt.Sprintln(v...)
-	DefaultLogger.Output(INFO, defaultCallerDepth, msg)
+// zapSlogHandler bridges slog to zap's JSON encoder
+type zapSlogHandler struct {
+	zap *zap.Logger
+	enc zapcore.Encoder
 }
 
-// Infof logs message through DefaultLogger
-func Infof(format string, v ...interface{}) {
-	msg := fmt.Sprintf(format, v...)
-	DefaultLogger.Output(INFO, defaultCallerDepth, msg)
+func (h *zapSlogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.zap.Core().Enabled(levelToZap(level))
 }
 
-// Warn logs warning message through DefaultLogger
-func Warn(v ...interface{}) {
-	msg := fmt.Sprintln(v...)
-	DefaultLogger.Output(WARNING, defaultCallerDepth, msg)
+func (h *zapSlogHandler) Handle(ctx context.Context, r slog.Record) error {
+	fields := make([]zap.Field, 0, r.NumAttrs())
+	r.Attrs(func(attr slog.Attr) bool {
+		if attr.Key != "" {
+			fields = append(fields, zap.String(attr.Key, attr.Value.String()))
+		}
+		return true
+	})
+
+	ce := h.zap.Core().Check(zapcore.Entry{
+		Level:   levelToZap(r.Level),
+		Time:    r.Time,
+		Message: r.Message,
+	}, nil)
+	if ce != nil {
+		ce.Write(fields...)
+	}
+	return nil
 }
 
-// Error logs error message through DefaultLogger
-func Error(v ...interface{}) {
-	msg := fmt.Sprintln(v...)
-	DefaultLogger.Output(ERROR, defaultCallerDepth, msg)
+func (h *zapSlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h
 }
 
-// Errorf logs error message through DefaultLogger
-func Errorf(format string, v ...interface{}) {
-	msg := fmt.Sprintf(format, v...)
-	DefaultLogger.Output(ERROR, defaultCallerDepth, msg)
+func (h *zapSlogHandler) WithGroup(name string) slog.Handler {
+	return h
 }
 
-// Fatal prints error message then stop the program
-func Fatal(v ...interface{}) {
-	msg := fmt.Sprintln(v...)
-	DefaultLogger.Output(FATAL, defaultCallerDepth, msg)
+func levelToZap(l slog.Level) zapcore.Level {
+	switch l {
+	case slog.LevelDebug:
+		return zapcore.DebugLevel
+	case slog.LevelInfo:
+		return zapcore.InfoLevel
+	case slog.LevelWarn:
+		return zapcore.WarnLevel
+	case slog.LevelError:
+		return zapcore.ErrorLevel
+	default:
+		return zapcore.InfoLevel
+	}
+}
+
+// Output implements ILogger
+func (l *Logger) Output(level LogLevel, callerDepth int, msg string) {
+	switch level {
+	case DEBUG:
+		l.zap.Debug(msg)
+	case INFO:
+		l.zap.Info(msg)
+	case WARNING:
+		l.zap.Warn(msg)
+	case ERROR, FATAL:
+		l.zap.Error(msg)
+	}
+}
+
+// Slog returns the slog.Logger for structured logging
+func (l *Logger) Slog() *slog.Logger {
+	return l.slog
+}
+
+// Zap returns the underlying zap.Logger for high-performance use
+func (l *Logger) Zap() *zap.Logger {
+	return l.zap
+}
+
+// Setup creates a new logger with given settings (backward compatible)
+func Setup(settings *Settings) {
+	l, err := NewLogger()
+	if err != nil {
+		panic(err)
+	}
+	DefaultLogger = l
+	if settings != nil && settings.Path != "" {
+		logFile, err := os.OpenFile(
+			filepath.Join(settings.Path, logFileName),
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return
+		}
+		mw := io.MultiWriter(os.Stdout, logFile)
+		encoderCfg := zap.NewProductionEncoderConfig()
+		encoderCfg.TimeKey = "timestamp"
+		encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+		encoderCfg.CallerKey = "caller"
+		encoderCfg.EncodeCaller = zapcore.ShortCallerEncoder
+
+		core := zapcore.NewCore(
+			zapcore.NewJSONEncoder(encoderCfg),
+			zapcore.AddSync(mw),
+			zapcore.ErrorLevel,
+		)
+		l.zap = zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
+		l.slog = slog.New(&zapSlogHandler{zap: l.zap, enc: zapcore.NewJSONEncoder(encoderCfg)})
+	}
+}
+
+func getCallerInfo(skip int) string {
+	_, file, line, ok := runtime.Caller(skip)
+	if !ok {
+		return "???"
+	}
+	return filepath.Base(file) + ":" + itoa(line)
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	pos := len(buf)
+	for i > 0 {
+		pos--
+		buf[pos] = byte('0' + i%10)
+		i /= 10
+	}
+	return string(buf[pos:])
+}
+
+// Debug logs in format of [DEBUG] + msg
+func Debug(v ...any) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		l.zap.Sugar().Debug(v...)
+	}
+}
+
+// Debugf logs formatted debug message
+func Debugf(format string, v ...any) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		l.zap.Sugar().Debugf(format, v...)
+	}
+}
+
+// Info logs in format of [INFO] + msg
+func Info(v ...any) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		l.zap.Sugar().Info(v...)
+	}
+}
+
+// Infof logs formatted info message
+func Infof(format string, v ...any) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		l.zap.Sugar().Infof(format, v...)
+	}
+}
+
+// Warn logs in format of [WARN] + msg
+func Warn(v ...any) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		l.zap.Sugar().Warn(v...)
+	}
+}
+
+// Warnf logs formatted warning message
+func Warnf(format string, v ...any) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		l.zap.Sugar().Warnf(format, v...)
+	}
+}
+
+// Error logs in format of [ERROR] + msg
+func Error(v ...any) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		l.zap.Sugar().Error(v...)
+	}
+}
+
+// Errorf logs formatted error message
+func Errorf(format string, v ...any) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		l.zap.Sugar().Errorf(format, v...)
+	}
+}
+
+// Fatal logs and exits
+func Fatal(v ...any) {
+	if l, ok := DefaultLogger.(*Logger); ok {
+		l.zap.Sugar().Fatal(v...)
+	}
 }

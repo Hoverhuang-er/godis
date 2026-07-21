@@ -9,7 +9,7 @@ import (
 	"github.com/hdt3213/godis/cluster/core"
 	"github.com/hdt3213/godis/cluster/raft"
 	"github.com/hdt3213/godis/config"
-	"github.com/hdt3213/godis/lib/logger"
+	"log/slog"
 )
 
 type Cluster = core.Cluster
@@ -33,7 +33,7 @@ func MakeCluster() *Cluster {
 		Master:      config.Properties.MasterInCluster,
 	})
 	if err != nil {
-		logger.Error(err.Error())
+		slog.Error(err.Error())
 		panic(err)
 	}
 	return cluster

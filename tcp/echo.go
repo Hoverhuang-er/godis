@@ -7,13 +7,13 @@ package tcp
 import (
 	"bufio"
 	"context"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/sync/atomic"
 	"github.com/hdt3213/godis/lib/sync/wait"
 	"io"
 	"net"
 	"sync"
 	"time"
+	"log/slog"
 )
 
 // EchoHandler echos received line to client, using for test
@@ -59,15 +59,15 @@ func (h *EchoHandler) Handle(ctx context.Context, conn net.Conn) {
 		msg, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				// logger.Info("connection close")
+				// slog.Info("connection close")
 				h.activeConn.Delete(client)
 			} else {
-				logger.Warn(err)
+				slog.Warn(err.Error())
 			}
 			return
 		}
 		client.Waiting.Add(1)
-		//logger.Info("sleeping")
+		//slog.Info("sleeping")
 		//time.Sleep(10 * time.Second)
 		b := []byte(msg)
 		_, _ = conn.Write(b)
@@ -77,7 +77,7 @@ func (h *EchoHandler) Handle(ctx context.Context, conn net.Conn) {
 
 // Close stops echo handler
 func (h *EchoHandler) Close() error {
-	logger.Info("handler shutting down...")
+	slog.Info("handler shutting down...")
 	h.closing.Set(true)
 	h.activeConn.Range(func(key interface{}, val interface{}) bool {
 		client := key.(*EchoClient)

@@ -8,10 +8,11 @@ import (
 	"github.com/hdt3213/godis/config"
 	"github.com/hdt3213/godis/database"
 	idatabase "github.com/hdt3213/godis/interface/database"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/redis/server/gnet"
 	stdserver "github.com/hdt3213/godis/redis/server/std"
+	"github.com/hdt3213/godis/lib/logger"
+	"log/slog"
 )
 
 var banner = `
@@ -71,6 +72,6 @@ func main() {
 		err = stdserver.Serve(listenAddr, handler)
 	}
 	if err != nil {
-		logger.Errorf("start server failed: %v", err)
+		slog.Error(fmt.Sprintf("start server failed: %v", err))
 	}
 }

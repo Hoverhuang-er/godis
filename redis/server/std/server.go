@@ -15,12 +15,12 @@ import (
 	"github.com/hdt3213/godis/config"
 	"github.com/hdt3213/godis/database"
 	idatabase "github.com/hdt3213/godis/interface/database"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/sync/atomic"
 	"github.com/hdt3213/godis/redis/connection"
 	"github.com/hdt3213/godis/redis/parser"
 	"github.com/hdt3213/godis/redis/protocol"
 	"github.com/hdt3213/godis/tcp"
+	"log/slog"
 )
 
 var (
@@ -79,7 +79,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 				strings.Contains(payload.Err.Error(), "use of closed network connection") {
 				// connection closed
 				h.closeClient(client)
-				logger.Info("connection closed: " + client.RemoteAddr())
+				slog.Info("connection closed: " + client.RemoteAddr())
 				return
 			}
 			// protocol err
@@ -87,18 +87,18 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 			_, err := client.Write(errReply.ToBytes())
 			if err != nil {
 				h.closeClient(client)
-				logger.Info("connection closed: " + client.RemoteAddr())
+				slog.Info("connection closed: " + client.RemoteAddr())
 				return
 			}
 			continue
 		}
 		if payload.Data == nil {
-			logger.Error("empty payload")
+			slog.Error("empty payload")
 			continue
 		}
 		r, ok := payload.Data.(*protocol.MultiBulkReply)
 		if !ok {
-			logger.Error("require multi bulk protocol")
+			slog.Error("require multi bulk protocol")
 			continue
 		}
 		result := h.db.Exec(client, r.Args)
@@ -112,7 +112,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 
 // Close stops handler
 func (h *Handler) Close() error {
-	logger.Info("handler shutting down...")
+	slog.Info("handler shutting down...")
 	h.closing.Set(true)
 	// TODO: concurrent wait
 	h.activeConn.Range(func(key interface{}, val interface{}) bool {

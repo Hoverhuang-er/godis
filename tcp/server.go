@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/hdt3213/godis/interface/tcp"
-	"github.com/hdt3213/godis/lib/logger"
+	"log/slog"
 )
 
 // Config stores tcp server properties
@@ -46,7 +46,7 @@ func ListenAndServeWithSignal(cfg *Config, handler tcp.Handler) error {
 		return err
 	}
 	//cfg.Address = listener.Addr().String()
-	logger.Info(fmt.Sprintf("bind: %s, start listening...", cfg.Address))
+	slog.Info(fmt.Sprintf("bind: %s, start listening...", cfg.Address))
 	ListenAndServe(listener, handler, closeChan)
 	return nil
 }
@@ -59,11 +59,11 @@ func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 	go func() {
 		select {
 		case <-closeChan:
-			logger.Info("get exit signal")
+			slog.Info("get exit signal")
 		case er := <-errCh:
-			logger.Info(fmt.Sprintf("accept error: %s", er.Error()))
+			slog.Info(fmt.Sprintf("accept error: %s", er.Error()))
 		}
-		logger.Info("shutting down...")
+		slog.Info("shutting down...")
 		_ = listener.Close() // listener.Accept() will return err immediately
 		_ = handler.Close()  // close connections
 	}()
@@ -75,7 +75,7 @@ func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 		if err != nil {
 			// learn from net/http/serve.go#Serve()
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				logger.Infof("accept occurs temporary error: %v, retry in 5ms", err)
+				slog.Info(fmt.Sprintf("accept occurs temporary error: %v, retry in 5ms", err))
 				time.Sleep(5 * time.Millisecond)
 				continue
 			}
@@ -83,7 +83,7 @@ func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 			break
 		}
 		// handle
-		// logger.Info("accept link")
+		// slog.Info("accept link")
 		ClientCounter++
 		waitDone.Add(1)
 		go func() {

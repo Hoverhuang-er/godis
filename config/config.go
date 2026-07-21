@@ -12,7 +12,7 @@ import (
 
 	"github.com/hdt3213/godis/lib/utils"
 
-	"github.com/hdt3213/godis/lib/logger"
+	"log/slog"
 )
 
 var (
@@ -117,7 +117,7 @@ func parse(src io.Reader) *ServerProperties {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		logger.Fatal(err)
+		slog.Error(err.Error())
 	}
 
 	// parse format
