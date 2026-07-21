@@ -9,7 +9,7 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}",
+            "program": "${workspaceFolder}/cmd/godis",
             "cwd": "${workspaceFolder}",
             "env": {
                 "CONFIG": "node2.conf"

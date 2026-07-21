@@ -51,7 +51,7 @@ jobs:
           if [ "${{ matrix.os }}" = "windows" ]; then
             output_name="godis.exe"
           fi
-          go build -tags greenteagc -ldflags="-s -w" -o "$output_name" .
+          go build -tags greenteagc -ldflags="-s -w" -o "$output_name" ./cmd/godis/
 
       - name: Package
         run: |
@@ -62,8 +62,8 @@ jobs:
           archive_name="godis_${{ matrix.os }}_${{ matrix.arch }}.zip"
           # Include standalone.toml configuration template
           zip "$archive_name" "$output_name"
-          if [ -f "standalone.toml" ]; then
-            zip "$archive_name" "standalone.toml"
+          if [ -f "config/standalone.toml" ]; then
+            zip "$archive_name" "config/standalone.toml"
           fi
           rm -f "$output_name"
 
@@ -91,7 +91,7 @@ jobs:
 
       - name: Prepare Release Notes
         run: |
-          cp CHANGELOGS.md CHANGELOGS-latest.md
+          cp docs/CHANGELOGS.md CHANGELOGS-latest.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
