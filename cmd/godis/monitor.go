@@ -63,9 +63,10 @@ func runCLITUI(c *client.Client, flags cliFlags) {
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 	fmt.Print(hideCursor)
 	defer fmt.Print(showCursor)
-
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGWINCH)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	// SIGWINCH only on Unix; Windows uses a different resize mechanism
+	notifyWinch(sigCh)
 
 	tui := &cliTUI{
 		c:         c,

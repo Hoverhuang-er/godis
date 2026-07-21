@@ -1,3 +1,7 @@
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 name: Release
 
 on:
@@ -51,7 +55,7 @@ jobs:
             ${{ runner.os }}-go-build-
 
       - name: Build
-        continue-on-error: true
+        continue-on-error: false
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
@@ -67,6 +71,10 @@ jobs:
         run: |
           output_name="godis"
           [ "${{ matrix.os }}" = "windows" ] && output_name="godis.exe"
+          if [ ! -f "$output_name" ]; then
+            echo "Binary not found, skipping packaging"
+            exit 0
+          fi
           archive_name="godis_${{ matrix.os }}_${{ matrix.arch }}.zip"
           zip "$archive_name" "$output_name"
           [ -f "config/standalone.toml" ] && zip "$archive_name" "config/standalone.toml"
