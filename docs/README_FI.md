@@ -194,50 +194,102 @@ MSET (10 keys): 88417.33 requests per second, p50=3.687 msec
 
 ## Koodin lukuopas
 
-Jos haluat lukea koodia tasta repositoriosta, tassa on yksinkertainen opas.
+Projekti noudattaa [Go Project Layout](https://github.com/golang-standards/project-layout) -standardia:
 
-- Projektin juuri: vain aloituspiste
-- config: konfiguraation jäsennin
-- interface: liittyman maaritelmia
-- lib: apuohjelmia, kuten lokitus, synkronointi ja jokerimerkit
+```
+godis/
+├── cmd/                          # Saantopisteet
+│   ├── godis/main.go             # Godis-palvelin (standalone/cluster)
+│   ├── godis/cli.go              # Sisaanrakennettu redis-cli (--cli)
+│   └── operator/main.go          # Kubernetes Operator
+├── internal/                     # Yksityinen sovelluskoodi
+│   ├── config/                   # TOML-konfiguraatio (viper, hot-reload)
+│   ├── tcp/                      # TCP-palvelin (goroutine/yhteys)
+│   ├── redis/                    # Redis-protokolla
+│   │   ├── parser/               # RESP2/RESP3 -jasennin
+│   │   ├── protocol/             # Vastustyypit (Bulk, MultiBulk, Error jne.)
+│   │   ├── server/               # Palvelinadapterit
+│   │   │   ├── std/              #   Vakio net.TCP
+│   │   │   └── gnet/             #   gnet tapahtumasilmukka
+│   │   ├── client/               # Solmujen valinen asiakas
+│   │   └── connection/           # Yhteyden tila (DB, auth, multi)
+│   ├── interface/                # Syden rajapintojen maaritykset
+│   ├── database/                 # Tallemusmoottori ja komentokasittelijat
+│   │   ├── server.go             # Monitietokantapalvelin
+│   │   ├── database.go           # Yksittainen tietokanta
+│   │   ├── router.go             # Komentotaulu ja reititys
+│   │   ├── string.go             # GET, SET, INCR, APPEND jne.
+│   │   ├── hash.go               # HSET, HGET, HDEL jne.
+│   │   ├── list.go               # LPUSH, LRANGE, LINDEX jne.
+│   │   ├── set.go                # SADD, SMEMBERS, SINTER jne.
+│   │   ├── sortedset.go          # ZADD, ZRANGE, ZRANK jne.
+│   │   ├── stream.go             # XADD, XREAD, XGROUP jne.
+│   │   ├── geo.go                # GEOADD, GEOSEARCH jne.
+│   │   ├── keys.go               # DEL, EXISTS, EXPIRE, TTL jne.
+│   │   ├── transaction.go        # MULTI, EXEC, WATCH
+│   │   ├── persistence.go        # RDB-lataus
+│   │   ├── timeseries.go         # TS.CREATE, TS.ADD, TS.GET, TS.RANGE
+│   │   ├── search.go             # FT.CREATE, FT.SEARCH, FT.DROPINDEX
+│   │   ├── json.go               # JSON.SET, JSON.GET, JSON.DEL jne.
+│   │   ├── bloom.go              # BF.ADD, BF.EXISTS, BF.RESERVE
+│   │   ├── hyperloglog.go        # PFADD, PFCOUNT, PFMERGE
+│   │   ├── topk.go               # TOPK.ADD, TOPK.QUERY, TOPK.LIST
+│   │   ├── cms.go                # CMS.INCRBY, CMS.QUERY
+│   │   ├── tdigest.go            # TDIGEST.ADD, TDIGEST.QUANTILE
+│   │   ├── bitfield.go           # BITFIELD, BITFIELD_RO
+│   │   └── array.go              # AR.SET, AR.GET, AR.APPEND
+│   ├── aof/                      # AOF-pysyvyys ja uudelleenkirjoitus
+│   ├── pubsub/                   # Julkaisu/tilaus
+│   ├── cluster/                  # Klusteritila
+│   │   ├── core/                 # Slot-reititys, TCC-tapahtumat
+│   │   ├── commands/             # Klusteritietoiset komennot
+│   │   └── raft/                 # Raft-konsensus
+│   ├── monitoring/               # Prometheus-metriikat
+│   ├── auth/entraid/             # Entra ID JWT -vahvistus (Azure AD)
+│   ├── datastruct/               # Tietorakenteiden toteutukset
+│   │   ├── dict/                 # Rinnakkais hajautustaulu
+│   │   ├── list/                 # Quicklist
+│   │   ├── set/                  # Hajautustauluun perustuva joukko
+│   │   ├── sortedset/            # Skippilista
+│   │   ├── bitmap/               # Bittitaulukko
+│   │   ├── stream/               # Radix-puu -pohjainen virta
+│   │   ├── search/               # Kaanteisindeksi
+│   │   ├── hyperloglog/          # Kardiaalisuuden arviointi
+│   │   ├── bloom/                # Bloom-suodatin
+│   │   ├── cms/                  # Count-min Sketch
+│   │   ├── topk/                 # Top-K useimmat
+│   │   ├── tdigest/              # T-Digest (kvantiilit)
+│   │   ├── timeseries/           # Aikasarjat
+│   │   ├── array/                # Sparse indeksi-taulukko
+│   │   └── lock/                 # Avaintason luku/kirjoituslukot
+│   └── lib/                      # Apukirjastot
+│       ├── logger/               # Rakenteinen lokitus
+│       ├── pool/                 # Yleinen objektipooli
+│       ├── timewheel/            # Aikapyorä (vanheneminen ja cron)
+│       ├── wildcard/             # Globbaus
+│       ├── consistenthash/       # Johdonmukainen hajautusrengas
+│       ├── idgenerator/          # Snowflake ID -generaattori
+│       ├── arena/                # Muistiallocated
+│       └── greenteagc/           # GC-viritys
+├── config/                       # Konfiguraatiotiedostot
+│   ├── standalone.toml           # Standalone-konfiguraatio
+│   ├── cluster.toml              # Klusterikonfiguraatio
+│   └── crd/                      # Kubernetes CRD
+├── charts/                       # Helm Chart
+└── patches/                      # Korjattu riippuvuus
+```
 
-Suosittelen keskittymista seuraaviin hakemistoihin:
+### Ehdotettu luku jarjestys
 
-- tcp: TCP-palvelin
-- redis: Redis-protokollan jasennin
-- datastruct: tietorakenteiden toteutukset
-    - dict: rinnakkais hajautustaulu
-    - list: linkitetty lista
-    - lock: kaytetaan avainten lukitsemiseen säieturvallisuuden varmistamiseksi
-    - set: hajautustauluun perustuva joukko
-    - sortedset: skiplistiin perustuva jarjestetty joukko
-- database: tallennusmoottorin ydin
-    - server.go: erillinen redis-palvelin, jossa on useita tietokantoja
-    - database.go: yksittaisen tietokannan tietorakenne ja perustoiminnot
-    - exec.go: tietokannan portti
-    - router.go: komentotaulu
-    - keys.go: avainkomentojen kasittelijat
-    - string.go: merkkijonokomentojen kasittelijat
-    - list.go: listakomentojen kasittelijat
-    - hash.go: hajautustaulukomentojen kasittelijat
-    - set.go: joukkokomentojen kasittelijat
-    - sortedset.go: jarjestettyjen joukkojen komentojen kasittelijat
-    - pubsub.go: julkaisu/tilaus -toteutus
-    - aof.go: AOF-pysyvyyden ja uudelleenkirjoituksen toteutus
-    - geo.go: paikkatietoominaisuuksien toteutus
-    - sys.go: todentaminen ja muut jarjestelmatoiminnot
-    - transaction.go: paikallinen transaktio
-- cluster: 
-    - cluster.go: klusteritilan aloituspiste
-    - com.go: solmujen valinen viestinta
-    - del.go: `delete`-komennon atominen toteutus klusterissa
-    - keys.go: avainkomennot
-    - mset.go: `mset`-komennon atominen toteutus klusterissa
-    - multi.go: hajautetun transaktion aloituspiste
-    - pubsub.go: julkaisu/tilaus klusterissa
-    - rename.go: `rename`-komento klusterissa
-    - tcc.go: try-commit-catch hajautetun transaktion toteutus
-- aof: AOF-pysyvyys
+Aloita **saantopisteesta** (`cmd/godis/main.go`) ja seuraa tietovirtaa:
+
+1. **`internal/config/`** — konfiguraation lataus ja hot-reload
+2. **`internal/tcp/`** + **`internal/redis/parser/`** — yhteyksien hallinta ja RESP-jasennys
+3. **`internal/database/`** — sydin: reititys → monitietokanta → komennot
+4. **`internal/datastruct/`** — tietorakenteet (dict, skiplist, quicklist jne.)
+5. **`internal/aof/`** + **`internal/database/persistence.go`** — pysyvyys
+6. **`internal/cluster/`** — hajautettu tila: Raft, slot-reititys, TCC
+7. **`internal/monitoring/`** — havainnoitavuus: Prometheus
 
 # Lisenssi
 

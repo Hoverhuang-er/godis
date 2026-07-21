@@ -183,45 +183,99 @@ MSET (10 keys): 88417.33 requests per second, p50=3.687 msec
 
 ## 如何阅读源码
 
-本项目的目录结构:
+项目遵循 [Go Project Layout](https://github.com/golang-standards/project-layout) 标准组织代码：
 
-- 根目录: main 函数，执行入口
-- config: 配置文件解析
-- interface: 一些模块间的接口定义
-- lib: 各种工具，比如logger、同步和通配符
+```
+godis/
+├── cmd/                          # 程序入口
+│   ├── godis/main.go             # Godis 服务器 — 单机/集群模式
+│   ├── godis/cli.go              # 内置 redis-cli（--cli 标志）
+│   └── operator/main.go          # Kubernetes Operator
+├── internal/                     # 内部实现
+│   ├── config/                   # TOML 配置（viper 热加载，嵌入默认配置）
+│   ├── tcp/                      # TCP 服务器 — 连接管理、每个连接一个 goroutine
+│   ├── redis/                    # Redis 协议实现
+│   │   ├── parser/               # RESP2/RESP3 解析器（流式、零拷贝）
+│   │   ├── protocol/             # 回复类型（Bulk、MultiBulk、Error、Integer 等）
+│   │   ├── server/               # 服务器适配器
+│   │   │   ├── std/              #   标准 net.TCP listener
+│   │   │   └── gnet/             #   gnet 事件循环（更高吞吐）
+│   │   ├── client/               # 集群模式下的节点间通信客户端
+│   │   └── connection/           # 连接状态（DB 索引、认证、事务）
+│   ├── interface/                # 核心接口定义（存储引擎、连接、回复）
+│   ├── database/                 # 存储引擎与命令处理器
+│   │   ├── server.go             # 多数据库服务器（AOF、复制、慢查询）
+│   │   ├── database.go           # 单数据库核心（数据访问、TTL、锁）
+│   │   ├── router.go             # 命令表 — 注册与路由
+│   │   ├── string.go             # GET、SET、INCR、APPEND、GETBIT 等
+│   │   ├── hash.go               # HSET、HGET、HDEL、HGETALL 等
+│   │   ├── list.go               # LPUSH、LRANGE、LINDEX、LTRIM 等
+│   │   ├── set.go                # SADD、SMEMBERS、SINTER、SUNION 等
+│   │   ├── sortedset.go          # ZADD、ZRANGE、ZRANK、ZSCORE 等
+│   │   ├── stream.go             # XADD、XREAD、XGROUP、XACK 等
+│   │   ├── geo.go                # GEOADD、GEOSEARCH、GEODIST 等
+│   │   ├── keys.go               # DEL、EXISTS、EXPIRE、TTL、TYPE 等
+│   │   ├── transaction.go        # MULTI、EXEC、WATCH — 原子隔离事务
+│   │   ├── persistence.go        # RDB 文件加载
+│   │   ├── timeseries.go         # TS.CREATE、TS.ADD、TS.GET、TS.RANGE
+│   │   ├── search.go             # FT.CREATE、FT.SEARCH、FT.DROPINDEX、FT.INFO
+│   │   ├── json.go               # JSON.SET、JSON.GET、JSON.DEL、JSON.ARRAPPEND 等
+│   │   ├── bloom.go              # BF.ADD、BF.EXISTS、BF.RESERVE、BF.MADD
+│   │   ├── hyperloglog.go        # PFADD、PFCOUNT、PFMERGE
+│   │   ├── topk.go               # TOPK.ADD、TOPK.QUERY、TOPK.LIST
+│   │   ├── cms.go                # CMS.INCRBY、CMS.QUERY、CMS.MERGE
+│   │   ├── tdigest.go            # TDIGEST.ADD、TDIGEST.QUANTILE
+│   │   ├── bitfield.go           # BITFIELD、BITFIELD_RO
+│   │   └── array.go              # AR.SET、AR.GET、AR.APPEND、AR.POP
+│   ├── aof/                      # AOF 持久化与重写
+│   ├── pubsub/                   # 发布/订阅通道管理
+│   ├── cluster/                  # 集群模式
+│   │   ├── core/                 # 槽路由、TCC 分布式事务、迁移
+│   │   ├── commands/             # 集群感知命令（DEL、MSET、RENAME 通过 TCC）
+│   │   └── raft/                 # Raft 共识 — 元数据管理、故障切换
+│   ├── monitoring/               # Prometheus /metrics 端点（兼容 redis_exporter）
+│   ├── auth/entraid/             # Entra ID JWT 令牌验证（Azure AD）
+│   ├── datastruct/               # 底层数据结构实现
+│   │   ├── dict/                 # 并发哈希表（分段锁）
+│   │   ├── list/                 # Quicklist（链表分段）
+│   │   ├── set/                  # 哈希集合
+│   │   ├── sortedset/            # 跳表
+│   │   ├── bitmap/               # 位图
+│   │   ├── stream/               # 基于基数树的流
+│   │   ├── search/               # 倒排索引（词 → 文档、评分）
+│   │   ├── hyperloglog/          # 基数估计（2^14 寄存器）
+│   │   ├── bloom/                # 布隆过滤器（k 哈希、最优 m）
+│   │   ├── cms/                  # Count-min Sketch（频率估计）
+│   │   ├── topk/                 # Top-K 频繁项
+│   │   ├── tdigest/              # T-Digest（分位数估计）
+│   │   ├── timeseries/           # 时序数据点
+│   │   ├── array/                # 稀疏索引数组
+│   │   └── lock/                 # 键级读写锁管理器
+│   └── lib/                      # 工具库
+│       ├── logger/               # 结构化文件日志
+│       ├── pool/                 # 通用对象池
+│       ├── timewheel/            # 时间轮 — 过期与定时任务
+│       ├── wildcard/             # 通配符匹配
+│       ├── consistenthash/       # 一致性哈希环
+│       ├── idgenerator/          # Snowflake ID 生成器
+│       ├── arena/                # 内存分配器
+│       └── greenteagc/           # GC 调优（GCPercent=40、线程绑定）
+├── config/                       # 配置文件
+│   ├── standalone.toml           # 单机模式配置
+│   ├── cluster.toml              # 集群模式配置
+│   └── crd/                      # Kubernetes CRD 定义
+├── charts/                       # Helm Chart
+└── patches/                      # 补丁依赖（boltdb riscv64 支持）
+```
 
-建议按照下列顺序阅读各包:
+### 建议阅读顺序
 
-- tcp: tcp 服务器实现
-- redis: redis 协议解析器
-- datastruct: redis 的各类数据结构实现
-    - dict: hash 表
-    - list: 链表
-    - lock: 用于锁定 key 的锁组件
-    - set： 基于hash表的集合
-    - sortedset: 基于跳表实现的有序集合
-- database: 存储引擎核心
-    - server.go: redis 服务实例, 支持多数据库, 持久化, 主从复制等能力
-    - database.go: 单个 database 的数据结构和功能
-    - router.go: 将命令路由给响应的处理函数
-    - keys.go: del、ttl、expire 等通用命令实现
-    - string.go: get、set 等字符串命令实现
-    - list.go: lpush、lindex 等列表命令实现
-    - hash.go: hget、hset 等哈希表命令实现
-    - set.go: sadd 等集合命令实现
-    - sortedset.go: zadd 等有序集合命令实现
-    - pubsub.go: 发布订阅命令实现
-    - geo.go: GEO 相关命令实现
-    - sys.go: Auth 等系统功能实现
-    - transaction.go: 单机事务实现
-- cluster: 集群
-  - cluster.go: 集群入口
-  - com.go: 节点间通信
-  - del.go: delete 命令原子性实现
-  - keys.go: key 相关命令集群中实现
-  - mset.go: mset 命令原子性实现
-  - multi.go: 集群内事务实现
-  - pubsub.go: 发布订阅实现
-  - rename.go: rename 命令集群实现
-  - tcc.go: tcc 分布式事务底层实现
-- aof: AOF 持久化实现 
+从**入口点**（`cmd/godis/main.go`）开始，沿着数据流阅读：
+
+1. **`internal/config/`** — godis 如何加载和热更新配置
+2. **`internal/tcp/`** + **`internal/redis/parser/`** — 连接如何被接受和 RESP 请求如何解析
+3. **`internal/database/`** — 核心：`router.go`（路由）→ `server.go`（多库编排）→ 各个命令文件
+4. **`internal/datastruct/`** — 支撑各命令的数据结构（dict、skiplist、quicklist 等）
+5. **`internal/aof/`** + **`internal/database/persistence.go`** — 持久化：AOF 重写和 RDB 加载
+6. **`internal/cluster/`** — 分布式模式：Raft 共识、槽路由、TCC 事务
+7. **`internal/monitoring/`** — 可观测性：Prometheus 指标

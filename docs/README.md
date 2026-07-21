@@ -316,50 +316,102 @@ xychart-beta
 
 ## Read My Code
 
-If you want to read my code in this repository, here is a simple guidance.
+The project follows the [Go Project Layout](https://github.com/golang-standards/project-layout) standard:
 
-- project root: only the entry point
-- config: config parser
-- interface: some interface definitions
-- lib: some utils, such as logger, sync utils and wildcard
+```
+godis/
+├── cmd/                          # Entry points
+│   ├── godis/main.go             # Godis server — standalone or cluster
+│   ├── godis/cli.go              # Built-in redis-cli (--cli flag)
+│   └── operator/main.go          # Kubernetes operator controller
+├── internal/                     # Private application code
+│   ├── config/                   # TOML config (viper, hot-reload, embedded default)
+│   ├── tcp/                      # TCP server — connection accept, goroutine-per-conn
+│   ├── redis/                    # Redis wire protocol
+│   │   ├── parser/               # RESP2/RESP3 parser (streaming, zero-copy)
+│   │   ├── protocol/             # Reply types (Bulk, MultiBulk, Error, Integer, etc.)
+│   │   ├── server/               # Server adapters
+│   │   │   ├── std/              #   Standard net.TCP listener
+│   │   │   └── gnet/             #   gnet event-loop (higher throughput)
+│   │   ├── client/               # Client for inter-node relay in cluster mode
+│   │   └── connection/           # Per-connection state (DB index, auth, multi)
+│   ├── interface/                # Core interfaces (DB engine, connection, reply)
+│   ├── database/                 # Storage engine & command handlers
+│   │   ├── server.go             # Multi-database server (AOF, replication, slowlog)
+│   │   ├── database.go           # Single database core (data access, TTL, locks)
+│   │   ├── router.go             # Command table — register + route
+│   │   ├── string.go             # GET, SET, INCR, APPEND, GETBIT, etc.
+│   │   ├── hash.go               # HSET, HGET, HDEL, HGETALL, etc.
+│   │   ├── list.go               # LPUSH, LRANGE, LINDEX, LTRIM, etc.
+│   │   ├── set.go                # SADD, SMEMBERS, SINTER, SUNION, etc.
+│   │   ├── sortedset.go          # ZADD, ZRANGE, ZRANK, ZSCORE, etc.
+│   │   ├── stream.go             # XADD, XREAD, XGROUP, XACK, etc.
+│   │   ├── geo.go                # GEOADD, GEOSEARCH, GEODIST, etc.
+│   │   ├── keys.go               # DEL, EXISTS, EXPIRE, TTL, TYPE, etc.
+│   │   ├── transaction.go        # MULTI, EXEC, WATCH — atomic & isolated
+│   │   ├── persistence.go        # RDB loading from disk
+│   │   ├── timeseries.go         # TS.CREATE, TS.ADD, TS.GET, TS.RANGE
+│   │   ├── search.go             # FT.CREATE, FT.SEARCH, FT.DROPINDEX, FT.INFO
+│   │   ├── json.go               # JSON.SET, JSON.GET, JSON.DEL, JSON.ARRAPPEND, etc.
+│   │   ├── bloom.go              # BF.ADD, BF.EXISTS, BF.RESERVE, BF.MADD
+│   │   ├── hyperloglog.go        # PFADD, PFCOUNT, PFMERGE
+│   │   ├── topk.go               # TOPK.ADD, TOPK.QUERY, TOPK.LIST
+│   │   ├── cms.go                # CMS.INCRBY, CMS.QUERY, CMS.MERGE
+│   │   ├── tdigest.go            # TDIGEST.ADD, TDIGEST.QUANTILE
+│   │   ├── bitfield.go           # BITFIELD, BITFIELD_RO
+│   │   └── array.go              # AR.SET, AR.GET, AR.APPEND, AR.POP
+│   ├── aof/                      # Append-Only File persistence & rewrite
+│   ├── pubsub/                   # Publish/Subscribe channel hub
+│   ├── cluster/                  # Cluster mode
+│   │   ├── core/                 # Slot routing, TCC transactions, migration
+│   │   ├── commands/             # Cluster-aware DEL, MSET, RENAME via TCC
+│   │   └── raft/                 # Raft consensus — metadata, failover
+│   ├── monitoring/               # Prometheus /metrics endpoint (redis_exporter compatible)
+│   ├── auth/entraid/             # Entra ID JWT token validation (Azure AD)
+│   ├── datastruct/               # Low-level data structure implementations
+│   │   ├── dict/                 # Concurrent hash map (lock-striped)
+│   │   ├── list/                 # Quicklist (linked list segments)
+│   │   ├── set/                  # Hash set
+│   │   ├── sortedset/            # Skip list
+│   │   ├── bitmap/               # Bit array
+│   │   ├── stream/               # Radix-tree-based stream
+│   │   ├── search/               # Inverted index (terms → docs, scoring)
+│   │   ├── hyperloglog/          # Probabilistic cardinality (2^14 registers)
+│   │   ├── bloom/                # Bloom filter (k-hash, optimal m)
+│   │   ├── cms/                  # Count-min sketch (frequency estimation)
+│   │   ├── topk/                 # Top-K frequent items
+│   │   ├── tdigest/              # T-Digest (quantile estimation)
+│   │   ├── timeseries/           # Time series samples
+│   │   ├── array/                # Sparse index-addressable array
+│   │   └── lock/                 # Key-level read/write lock manager
+│   └── lib/                      # Utility libraries
+│       ├── logger/               # Structured file logger
+│       ├── pool/                 # Generic object pool
+│       ├── timewheel/            # Time wheel — expiration & cron
+│       ├── wildcard/             # Glob pattern matching
+│       ├── consistenthash/       # Consistent hashing ring
+│       ├── idgenerator/          # Snowflake ID generator
+│       ├── arena/                # Memory arena allocator
+│       └── greenteagc/           # GC tuning (GCPercent=40, thread pinning)
+├── config/                       # Configuration files
+│   ├── standalone.toml           # Standalone server config
+│   ├── cluster.toml              # Cluster mode config
+│   └── crd/                      # Kubernetes CRD definitions
+├── charts/                       # Helm chart for Kubernetes deployment
+└── patches/                      # Patched dependencies (boltdb riscv64 support)
+```
 
-I suggest focusing on the following directories:
+### Suggested reading order
 
-- tcp: the tcp server
-- redis: the redis protocol parser
-- datastruct: the implements of data structures
-    - dict: a concurrent hash map
-    - list: a linked list
-    - lock: it is used to lock keys to ensure thread safety
-    - set: a hash set based on map
-    - sortedset: a sorted set implements based on skiplist
-- database: the core of storage engine
-    - server.go: a standalone redis server, with multiple database
-    - database.go: data structure and base functions of single database
-    - exec.go: the gateway of database
-    - router.go: the command table
-    - keys.go: handlers for keys commands
-    - string.go: handlers for string commands
-    - list.go: handlers for list commands
-    - hash.go: handlers for hash commands
-    - set.go: handlers for set commands
-    - sortedset.go: handlers for sorted set commands
-    - pubsub.go: implements of publish / subscribe
-    - aof.go: implements of AOF persistence and rewrite
-    - geo.go: implements of geography features
-    - sys.go: authentication and other system function
-    - transaction.go: local transaction
-- cluster: 
-    - cluster.go: entrance of cluster mode
-    - com.go: communication within nodes
-    - del.go: atomic implementation of `delete` command in cluster
-    - keys.go: keys command
-    - mset.go: atomic implementation of `mset` command in cluster
-    - multi.go: entrance of distributed transaction
-    - pubsub.go: pub/sub in cluster
-    - rename.go: `rename` command in cluster 
-    - tcc.go: try-commit-catch distributed transaction implementation
-- aof: AOF persistence
+Start with the **entry point** (`cmd/godis/main.go`) and follow the flow:
+
+1. **`internal/config/`** — how godis loads and hot-reloads its configuration
+2. **`internal/tcp/`** + **`internal/redis/parser/`** — how connections are accepted and RESP requests are parsed
+3. **`internal/database/`** — the core: `router.go` (dispatch) → `server.go` (multi-db orchestration) → individual command files
+4. **`internal/datastruct/`** — the data structures that power each command (dict, skiplist, quicklist, etc.)
+5. **`internal/aof/`** + **`internal/database/persistence.go`** — durability: AOF rewrite and RDB loading
+6. **`internal/cluster/`** — distributed mode: Raft consensus, slot routing, TCC transactions
+7. **`internal/monitoring/`** — observability: Prometheus metrics
 
 # License
 

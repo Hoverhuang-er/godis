@@ -194,50 +194,102 @@ MSET (10 keys): 88417.33 requests per second, p50=3.687 msec
 
 ## コードの読み方
 
-このリポジトリのコードを読むための簡単なガイドです。
+このプロジェクトは [Go Project Layout](https://github.com/golang-standards/project-layout) に従っています：
 
-- プロジェクトルート: エントリポイントのみ
-- config: 設定パーサー
-- interface: インターフェース定義
-- lib: ユーティリティ (logger, 同期, ワイルドカードなど)
+```
+godis/
+├── cmd/                          # エントリポイント
+│   ├── godis/main.go             # Godis サーバー（スタンドアロン/クラスター）
+│   ├── godis/cli.go              # 組み込み redis-cli（--cli フラグ）
+│   └── operator/main.go          # Kubernetes Operator
+├── internal/                     # 内部実装
+│   ├── config/                   # TOML設定（viper ホットリロード、埋め込みデフォルト）
+│   ├── tcp/                      # TCPサーバー（goroutine/コネクション）
+│   ├── redis/                    # Redis プロトコル
+│   │   ├── parser/               # RESP2/RESP3 パーサー（ストリーミング）
+│   │   ├── protocol/             # レスポンス型（Bulk、MultiBulk、Error 等）
+│   │   ├── server/               # サーバーアダプター
+│   │   │   ├── std/              #   標準 net.TCP
+│   │   │   └── gnet/             #   gnet イベントループ
+│   │   ├── client/               # クラスターノード間通信用クライアント
+│   │   └── connection/           # コネクション状態（DB、認証、トランザクション）
+│   ├── interface/                # コアインターフェース定義
+│   ├── database/                 # ストレージエンジンとコマンドハンドラー
+│   │   ├── server.go             # マルチデータベースサーバー（AOF、レプリケーション）
+│   │   ├── database.go           # 単一データベース（データアクセス、TTL、ロック）
+│   │   ├── router.go             # コマンド登録とルーティング
+│   │   ├── string.go             # GET、SET、INCR、APPEND 等
+│   │   ├── hash.go               # HSET、HGET、HDEL 等
+│   │   ├── list.go               # LPUSH、LRANGE、LINDEX 等
+│   │   ├── set.go                # SADD、SMEMBERS、SINTER 等
+│   │   ├── sortedset.go          # ZADD、ZRANGE、ZRANK 等
+│   │   ├── stream.go             # XADD、XREAD、XGROUP 等
+│   │   ├── geo.go                # GEOADD、GEOSEARCH 等
+│   │   ├── keys.go               # DEL、EXISTS、EXPIRE、TTL 等
+│   │   ├── transaction.go        # MULTI、EXEC、WATCH
+│   │   ├── persistence.go        # RDB 読み込み
+│   │   ├── timeseries.go         # TS.CREATE、TS.ADD、TS.GET、TS.RANGE
+│   │   ├── search.go             # FT.CREATE、FT.SEARCH、FT.DROPINDEX
+│   │   ├── json.go               # JSON.SET、JSON.GET、JSON.DEL 等
+│   │   ├── bloom.go              # BF.ADD、BF.EXISTS、BF.RESERVE
+│   │   ├── hyperloglog.go        # PFADD、PFCOUNT、PFMERGE
+│   │   ├── topk.go               # TOPK.ADD、TOPK.QUERY、TOPK.LIST
+│   │   ├── cms.go                # CMS.INCRBY、CMS.QUERY
+│   │   ├── tdigest.go            # TDIGEST.ADD、TDIGEST.QUANTILE
+│   │   ├── bitfield.go           # BITFIELD、BITFIELD_RO
+│   │   └── array.go              # AR.SET、AR.GET、AR.APPEND
+│   ├── aof/                      # AOF 永続化とリライト
+│   ├── pubsub/                   # パブリッシュ/サブスクライブ
+│   ├── cluster/                  # クラスターモード
+│   │   ├── core/                 # スロットルーティング、TCC トランザクション
+│   │   ├── commands/             # クラスター対応 DEL、MSET、RENAME
+│   │   └── raft/                 # Raft 合意形成
+│   ├── monitoring/               # Prometheus メトリクス
+│   ├── auth/entraid/             # Entra ID JWT 検証（Azure AD）
+│   ├── datastruct/               # データ構造実装
+│   │   ├── dict/                 # 並行ハッシュマップ（ロックストライピング）
+│   │   ├── list/                 # Quicklist
+│   │   ├── set/                  # ハッシュセット
+│   │   ├── sortedset/            # スキップリスト
+│   │   ├── bitmap/               # ビット配列
+│   │   ├── stream/               # 基数木ベースのストリーム
+│   │   ├── search/               # 転置インデックス
+│   │   ├── hyperloglog/          # 確率的基数推定（2^14 レジスタ）
+│   │   ├── bloom/                # ブルームフィルター
+│   │   ├── cms/                  # Count-min Sketch
+│   │   ├── topk/                 # Top-K 頻出項目
+│   │   ├── tdigest/              # T-Digest（分位数推定）
+│   │   ├── timeseries/           # 時系列データ
+│   │   ├── array/                # 疎インデックス配列
+│   │   └── lock/                 # キーレベル RW ロック
+│   └── lib/                      # ユーティリティ
+│       ├── logger/               # 構造化ファイルロガー
+│       ├── pool/                 # 汎用オブジェクトプール
+│       ├── timewheel/            # タイムホイール（有効期限と cron）
+│       ├── wildcard/             # グロブパターンマッチ
+│       ├── consistenthash/       # 一貫性ハッシュリング
+│       ├── idgenerator/          # Snowflake ID 生成器
+│       ├── arena/                # メモリアリーナアロケーター
+│       └── greenteagc/           # GC チューニング
+├── config/                       # 設定ファイル
+│   ├── standalone.toml           # スタンドアロン設定
+│   ├── cluster.toml              # クラスター設定
+│   └── crd/                      # Kubernetes CRD
+├── charts/                       # Helm Chart
+└── patches/                      # パッチ依存関係
+```
 
-以下のディレクトリに注目することをお勧めします:
+### 推奨読書順序
 
-- tcp: TCP サーバー
-- redis: Redis プロトコルパーサー
-- datastruct: データ構造の実装
-    - dict: 並行ハッシュマップ
-    - list: リンクリスト
-    - lock: スレッドセーフを確保するためのキーロック
-    - set: マップベースのハッシュセット
-    - sortedset: スキップリストベースのソート済みセット
-- database: ストレージエンジンの中核
-    - server.go: スタンドアロン Redis サーバー (複数データベース対応)
-    - database.go: 単一データベースのデータ構造と基本機能
-    - exec.go: データベースのゲートウェイ
-    - router.go: コマンドテーブル
-    - keys.go: キーコマンドのハンドラー
-    - string.go: 文字列コマンドのハンドラー
-    - list.go: リストコマンドのハンドラー
-    - hash.go: ハッシュコマンドのハンドラー
-    - set.go: セットコマンドのハンドラー
-    - sortedset.go: ソート済みセットコマンドのハンドラー
-    - pubsub.go: パブリッシュ/サブスクライブの実装
-    - aof.go: AOF 永続化と書き換えの実装
-    - geo.go: 地理空間機能の実装
-    - sys.go: 認証およびその他のシステム機能
-    - transaction.go: ローカルトランザクション
-- cluster: 
-    - cluster.go: クラスターモードのエントリ
-    - com.go: ノード間通信
-    - del.go: クラスターでの `delete` コマンドのアトミック実装
-    - keys.go: キーコマンド
-    - mset.go: クラスターでの `mset` コマンドのアトミック実装
-    - multi.go: 分散トランザクションのエントリ
-    - pubsub.go: クラスターでの pub/sub
-    - rename.go: クラスターでの `rename` コマンド
-    - tcc.go: Try-commit-catch 分散トランザクション実装
-- aof: AOF 永続化
+**エントリポイント**（`cmd/godis/main.go`）から始めて、データフローに沿って読み進めてください：
+
+1. **`internal/config/`** — 設定の読み込みとホットリロード
+2. **`internal/tcp/`** + **`internal/redis/parser/`** — 接続受付とRESP解析
+3. **`internal/database/`** — コア：ルーティング → マルチDB → 各コマンド
+4. **`internal/datastruct/`** — 各コマンドを支えるデータ構造
+5. **`internal/aof/`** + **`internal/database/persistence.go`** — 永続化
+6. **`internal/cluster/`** — 分散モード：Raft、スロットルーティング、TCC
+7. **`internal/monitoring/`** — 可観測性：Prometheus
 
 # ライセンス
 
