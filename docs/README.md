@@ -273,35 +273,37 @@ See: [commands.md](https://github.com/Hoverhuang-er/godis/blob/master/commands.m
 
 ## Benchmark
 
-Environment:
+Environment: **Go 1.23**, MacOS Monterey 12.5, Apple M2 Air
 
-Go version：1.23
-System: MacOS Monterey 12.5 M2 Air
-
-Performance report by redis-benchmark: 
-
+```mermaid
+xychart-beta
+    title "Godis redis-benchmark — Requests/sec"
+    x-axis ["PING", "SET", "GET", "INCR", "LPUSH", "RPUSH", "LPOP", "RPOP", "SADD", "HSET", "SPOP", "ZADD", "ZPOPMIN", "MSET10", "LR100", "LR300", "LR500", "LR600"]
+    y-axis "Ops/sec" 0 --> 200000
+    bar [179211, 158479, 156986, 164474, 151286, 176678, 177620, 172414, 159490, 175131, 170648, 165289, 185529, 88417, 46512, 21218, 13332, 11153]
 ```
-PING_INLINE: 179211.45 requests per second, p50=1.031 msec                    
-PING_MBULK: 173611.12 requests per second, p50=1.071 msec                    
-SET: 158478.61 requests per second, p50=1.535 msec                    
-GET: 156985.86 requests per second, p50=1.127 msec                    
-INCR: 164473.69 requests per second, p50=1.063 msec                    
-LPUSH: 151285.92 requests per second, p50=1.079 msec                    
-RPUSH: 176678.45 requests per second, p50=1.023 msec                    
-LPOP: 177619.89 requests per second, p50=1.039 msec                    
-RPOP: 172413.80 requests per second, p50=1.039 msec                    
-SADD: 159489.64 requests per second, p50=1.047 msec                    
-HSET: 175131.36 requests per second, p50=1.031 msec                    
-SPOP: 170648.45 requests per second, p50=1.031 msec                    
-ZADD: 165289.25 requests per second, p50=1.039 msec                    
-ZPOPMIN: 185528.77 requests per second, p50=0.999 msec                    
-LPUSH (needed to benchmark LRANGE): 172117.05 requests per second, p50=1.055 msec                    
-LRANGE_100 (first 100 elements): 46511.62 requests per second, p50=4.063 msec                   
-LRANGE_300 (first 300 elements): 21217.91 requests per second, p50=9.311 msec                     
-LRANGE_500 (first 500 elements): 13331.56 requests per second, p50=14.407 msec                    
-LRANGE_600 (first 600 elements): 11153.25 requests per second, p50=17.007 msec                    
-MSET (10 keys): 88417.33 requests per second, p50=3.687 msec  
-```
+
+| Command | Ops/sec | p50 |
+|---|---|---|
+| PING_INLINE | 179,211 | 1.03 ms |
+| PING_MBULK | 173,611 | 1.07 ms |
+| SET | 158,479 | 1.54 ms |
+| GET | 156,986 | 1.13 ms |
+| INCR | 164,474 | 1.06 ms |
+| LPUSH | 151,286 | 1.08 ms |
+| RPUSH | 176,678 | 1.02 ms |
+| LPOP | 177,620 | 1.04 ms |
+| RPOP | 172,414 | 1.04 ms |
+| SADD | 159,490 | 1.05 ms |
+| HSET | 175,131 | 1.03 ms |
+| SPOP | 170,648 | 1.03 ms |
+| ZADD | 165,289 | 1.04 ms |
+| ZPOPMIN | 185,529 | 1.00 ms |
+| MSET (10 keys) | 88,417 | 3.69 ms |
+| LRANGE_100 | 46,512 | 4.06 ms |
+| LRANGE_300 | 21,218 | 9.31 ms |
+| LRANGE_500 | 13,332 | 14.41 ms |
+| LRANGE_600 | 11,153 | 17.01 ms |
 
 ## Read My Code
 

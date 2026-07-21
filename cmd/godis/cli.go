@@ -10,7 +10,8 @@ import (
 	"strings"
 
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
-	"github.com/Hoverhuang-er/godis/internal/redis/client"
+	rclient "github.com/Hoverhuang-er/godis/internal/redis/client"
+	"github.com/Hoverhuang-er/godis/internal/redis/parser"
 	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 )
 
@@ -27,7 +28,6 @@ func parseCLIFlags() cliFlags {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--cli":
-			// already handled, skip
 		case "-h":
 			if i+1 < len(args) {
 				i++
@@ -55,7 +55,7 @@ func runCLI() {
 	flags := parseCLIFlags()
 
 	addr := net.JoinHostPort(flags.host, strconv.Itoa(flags.port))
-	c, err := client.MakeClient(addr)
+	c, err := rclient.MakeClient(addr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not connect to godis at %s: %v\n", addr, err)
 		os.Exit(1)
@@ -63,7 +63,6 @@ func runCLI() {
 	c.Start()
 	defer c.Close()
 
-	// Authenticate if password provided
 	if flags.auth != "" {
 		reply := c.Send(utils.ToCmdLine("AUTH", flags.auth))
 		if isError(reply) {
@@ -76,15 +75,15 @@ func runCLI() {
 	isTerminal := (stat.Mode() & os.ModeCharDevice) != 0
 
 	if isTerminal {
-		runInteractive(c, flags.host, flags.port)
+		runInteractive(c, flags)
 	} else {
-		runBatch(c, os.Stdin)
+		runBatch(c, os.Stdin, flags)
 	}
 }
 
-func runInteractive(c *client.Client, host string, port int) {
+func runInteractive(c *rclient.Client, flags cliFlags) {
 	scanner := bufio.NewScanner(os.Stdin)
-	prompt := fmt.Sprintf("%s:%d> ", host, port)
+	prompt := fmt.Sprintf("%s:%d> ", flags.host, flags.port)
 
 	fmt.Print(prompt)
 	for scanner.Scan() {
@@ -103,6 +102,13 @@ func runInteractive(c *client.Client, host string, port int) {
 			continue
 		}
 
+		cmd := strings.ToUpper(string(args[0]))
+		if cmd == "SUBSCRIBE" || cmd == "PSUBSCRIBE" {
+			runPubSub(flags, args)
+			fmt.Print(prompt)
+			continue
+		}
+
 		reply := c.Send(args)
 		printReply(reply, 0)
 		fmt.Print(prompt)
@@ -110,7 +116,7 @@ func runInteractive(c *client.Client, host string, port int) {
 	fmt.Println()
 }
 
-func runBatch(c *client.Client, r io.Reader) {
+func runBatch(c *rclient.Client, r io.Reader, flags cliFlags) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -123,14 +129,164 @@ func runBatch(c *client.Client, r io.Reader) {
 			continue
 		}
 
+		cmd := strings.ToUpper(string(args[0]))
+		if cmd == "SUBSCRIBE" || cmd == "PSUBSCRIBE" {
+			runPubSub(flags, args)
+			continue
+		}
+
 		reply := c.Send(args)
 		printReply(reply, 0)
 	}
 }
 
+// runPubSub opens a raw connection for SUBSCRIBE/PSUBSCRIBE mode.
+// It sends the subscribe command, then reads and displays push messages.
+func runPubSub(flags cliFlags, args [][]byte) {
+	addr := net.JoinHostPort(flags.host, strconv.Itoa(flags.port))
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not connect: %v\n", err)
+		return
+	}
+	defer conn.Close()
+
+	// Send AUTH if password provided
+	if flags.auth != "" {
+		authArgs := [][]byte{[]byte("AUTH"), []byte(flags.auth)}
+		conn.Write(protocol.MakeMultiBulkReply(authArgs).ToBytes())
+		// Read and discard the AUTH response
+		resp := make([]byte, 4096)
+		n, _ := conn.Read(resp)
+		if n > 0 && resp[0] == '-' {
+			fmt.Fprintf(os.Stderr, "AUTH failed: %s\n", strings.TrimRight(string(resp[1:n]), "\r\n"))
+			return
+		}
+	}
+
+	// Send the subscribe/psubscribe command via RESP
+	cmdPayload := protocol.MakeMultiBulkReply(args).ToBytes()
+	conn.Write(cmdPayload)
+
+	// Read and display subscribed/pushed messages
+	ch := parser.ParseStream(conn)
+	for payload := range ch {
+		if payload.Err != nil {
+			if payload.Err.Error() == "EOF" {
+				break
+			}
+			fmt.Fprintf(os.Stderr, "Error: %v\n", payload.Err)
+			break
+		}
+		if payload.Data == nil {
+			continue
+		}
+
+		data := payload.Data.ToBytes()
+		if len(data) == 0 {
+			continue
+		}
+
+		printPubSubMsg(data)
+	}
+}
+
+func printPubSubMsg(data []byte) {
+	// Expected format: *3\r\n$<n>\r\n<type>\r\n$<n>\r\n<channel>\r\n$<n>\r\n<message>\r\n
+	// or subscribe/unsubscribe confirmations.
+	parts := splitRESPArray(data)
+	if len(parts) < 3 {
+		fmt.Println(string(data))
+		return
+	}
+
+	msgType := string(parts[0])
+	channel := string(parts[1])
+
+	switch msgType {
+	case "subscribe":
+		count := string(parts[2])
+		fmt.Printf("1) \"subscribe\"\n2) \"%s\"\n3) (integer) %s\n", channel, count)
+	case "unsubscribe":
+		count := string(parts[2])
+		fmt.Printf("1) \"unsubscribe\"\n2) \"%s\"\n3) (integer) %s\n", channel, count)
+	case "message":
+		msg := string(parts[2])
+		fmt.Printf("1) \"message\"\n2) \"%s\"\n3) \"%s\"\n", channel, msg)
+	case "pmessage":
+		pattern := string(parts[0])
+		channel = string(parts[1])
+		msg := string(parts[2])
+		fmt.Printf("1) \"pmessage\"\n2) \"%s\"\n3) \"%s\"\n4) \"%s\"\n", pattern, channel, msg)
+	case "psubscribe":
+		count := string(parts[2])
+		fmt.Printf("1) \"psubscribe\"\n2) \"%s\"\n3) (integer) %s\n", channel, count)
+	case "punsubscribe":
+		count := string(parts[2])
+		fmt.Printf("1) \"punsubscribe\"\n2) \"%s\"\n3) (integer) %s\n", channel, count)
+	default:
+		fmt.Println(string(data))
+	}
+}
+
+// splitRESPArray splits a RESP array (*3\r\n... ) into element payloads.
+func splitRESPArray(data []byte) [][]byte {
+	if len(data) == 0 || data[0] != '*' {
+		return nil
+	}
+	var parts [][]byte
+	pos := 0
+	// skip "*<count>\r\n"
+	for pos < len(data) && data[pos] != '\n' {
+		pos++
+	}
+	pos++ // skip \n
+
+	for pos < len(data) {
+		if data[pos] == '*' {
+			// Nested array - not expected in pubsub
+			break
+		}
+		// Find the element
+		start := pos
+		if data[pos] == '$' {
+			// Bulk string: $<len>\r\n<data>\r\n
+			pos++
+			for pos < len(data) && data[pos] != '\r' {
+				pos++
+			}
+			pos += 2 // skip \r\n
+			// Read the data
+			strStart := pos
+			for pos < len(data) && !(data[pos] == '\r' && pos+1 < len(data) && data[pos+1] == '\n') {
+				pos++
+			}
+			parts = append(parts, data[strStart:pos])
+			pos += 2 // skip \r\n
+		} else if data[pos] == ':' {
+			// Integer: :<num>\r\n
+			pos++
+			for pos < len(data) && data[pos] != '\r' {
+				pos++
+			}
+			parts = append(parts, data[start+1:pos])
+			pos += 2
+		} else if data[pos] == '+' || data[pos] == '-' {
+			// Status or error
+			pos++
+			for pos < len(data) && data[pos] != '\r' {
+				pos++
+			}
+			parts = append(parts, data[start+1:pos])
+			pos += 2
+		} else {
+			break
+		}
+	}
+	return parts
+}
+
 func parseLine(line string) [][]byte {
-	// Simple space-separated argument parsing
-	// Supports double-quoted strings with escaped characters
 	var args [][]byte
 	i := 0
 	for i < len(line) {
@@ -143,14 +299,13 @@ func parseLine(line string) [][]byte {
 
 		var arg string
 		if line[i] == '"' {
-			// Quoted string
-			i++ // skip opening quote
+			i++
 			for i < len(line) {
 				if line[i] == '\\' && i+1 < len(line) {
 					arg += string(line[i+1])
 					i += 2
 				} else if line[i] == '"' {
-					i++ // skip closing quote
+					i++
 					break
 				} else {
 					arg += string(line[i])
@@ -158,7 +313,6 @@ func parseLine(line string) [][]byte {
 				}
 			}
 		} else if line[i] == '\'' {
-			// Single-quoted string
 			i++
 			for i < len(line) {
 				if line[i] == '\'' {
@@ -203,9 +357,13 @@ func printReply(r interface{}, depth int) {
 			fmt.Printf("\"%s\"", string(v.Arg))
 		}
 	case *protocol.MultiBulkReply:
-		fmt.Printf("%d) \"%s\"\n", depth+1, string(v.Args[0]))
-		for i, arg := range v.Args[1:] {
-			fmt.Printf("%d) \"%s\"\n", depth+2+i, string(arg))
+		if len(v.Args) == 0 {
+			fmt.Println("(empty list or set)")
+			return
+		}
+		for i, arg := range v.Args {
+			prefix := fmt.Sprintf("%d) ", depth+i+1)
+			fmt.Printf("%s\"%s\"\n", prefix, string(arg))
 		}
 	case *protocol.MultiRawReply:
 		for i, reply := range v.Replies {
@@ -221,13 +379,10 @@ func printReply(r interface{}, depth int) {
 			printReplyBytes(rr.ToBytes(), depth)
 		} else if rr, ok := r.(fmt.Stringer); ok {
 			fmt.Println(rr.String())
-		} else {
-			fmt.Println(string(r.(redisReply).ToBytes()))
 		}
 	}
 }
 
-// redisReply matches the interface{ToBytes()[]byte} signature
 type redisReply interface {
 	ToBytes() []byte
 }
@@ -249,15 +404,12 @@ func printReplyBytes(data []byte, depth int) {
 
 	switch data[0] {
 	case '+':
-		// Status reply: +OK\r\n
 		s := string(data[1 : len(data)-2])
 		fmt.Println(s)
 	case '-':
-		// Error reply: -ERR message\r\n
 		s := string(data[1 : len(data)-2])
 		fmt.Printf("(error) %s\n", s)
 	case ':':
-		// Integer reply: :1\r\n
 		num := string(data[1 : len(data)-2])
 		if depth == 0 {
 			fmt.Printf("(integer) %s\n", num)
@@ -265,9 +417,7 @@ func printReplyBytes(data []byte, depth int) {
 			fmt.Print(num)
 		}
 	case '$':
-		// Bulk string: $-1\r\n or $5\r\nhello\r\n
 		if data[1] == '-' {
-			// Null bulk
 			if depth == 0 {
 				fmt.Println("(nil)")
 			} else {
@@ -275,12 +425,10 @@ func printReplyBytes(data []byte, depth int) {
 			}
 			return
 		}
-		// Find the \r\n after the length
 		idx := 2
 		for idx < len(data) && data[idx] != '\r' {
 			idx++
 		}
-		// Content starts after the first \r\n
 		contentStart := idx + 2
 		contentLen := len(data) - contentStart - 2
 		if contentLen >= 0 {
@@ -292,15 +440,11 @@ func printReplyBytes(data []byte, depth int) {
 			}
 		}
 	case '*':
-		// Array
-		// Parse the count
-		endIdx := 1
-		for endIdx < len(data) && data[endIdx] != '\r' {
-			endIdx++
+		pos := 1
+		for pos < len(data) && data[pos] != '\r' {
+			pos++
 		}
-		// countStr := string(data[1:endIdx])
-		// Parse each element recursively
-		pos := endIdx + 2
+		pos += 2
 		elemIdx := 0
 		for pos < len(data) {
 			if elemIdx > 0 {
@@ -309,10 +453,8 @@ func printReplyBytes(data []byte, depth int) {
 			prefix := fmt.Sprintf("%d) ", depth+elemIdx+1)
 			fmt.Print(prefix)
 
-			// Find the end of this element and recurse
 			elemLen, elemBytes := findElement(data[pos:])
 			printReplyBytes(elemBytes, depth+1)
-
 			pos += elemLen
 			elemIdx++
 		}
@@ -321,7 +463,6 @@ func printReplyBytes(data []byte, depth int) {
 	}
 }
 
-// findElement finds the next complete RESP element starting at the given position
 func findElement(data []byte) (int, []byte) {
 	if len(data) == 0 {
 		return 0, nil
@@ -329,15 +470,12 @@ func findElement(data []byte) (int, []byte) {
 
 	switch data[0] {
 	case '+', '-', ':':
-		// Simple replies end with \r\n
 		end := 2
 		for end < len(data) && !(data[end-2] == '\r' && data[end-1] == '\n') {
 			end++
 		}
 		return end, data[:end]
 	case '$':
-		// Bulk string
-		// Find \r\n after length
 		idx := 1
 		for idx < len(data) && data[idx] != '\r' {
 			idx++
@@ -351,19 +489,14 @@ func findElement(data []byte) (int, []byte) {
 		fmt.Sscanf(lengthStr, "%d", &length)
 
 		if length == -1 {
-			// Null bulk: $-1\r\n
 			return idx + 2, data[:idx+2]
 		}
-
-		// $<length>\r\n<data>\r\n
 		totalLen := idx + 2 + length + 2
 		if totalLen > len(data) {
 			totalLen = len(data)
 		}
 		return totalLen, data[:totalLen]
 	case '*':
-		// Array
-		// Find \r\n after count
 		idx := 1
 		for idx < len(data) && data[idx] != '\r' {
 			idx++
@@ -380,7 +513,6 @@ func findElement(data []byte) (int, []byte) {
 		}
 		return pos, data[:pos]
 	default:
-		// Unknown, return as-is
 		return len(data), data
 	}
 }

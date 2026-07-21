@@ -16,10 +16,11 @@
 - build: GOAMD64=v3 for x86-64 SIMD (AVX2, AVX, FMA, BMI instruction set)
 - build: greenteagc runtime init now correctly imported and activated
 - build: Docker buildx layer caching (type=gha,mode=max)
+- feat: `--cli` with SUBSCRIBE/PSUBSCRIBE support for real-time push messages
 - docs: Prometheus monitoring section in EN, CN, JA, FI READMEs
 - docs: fix language links (blob/master/ → blob/master/docs/)
 - docs: add root README.md symlink for GitHub homepage rendering
-- config: Dir default fallback moved into populateFromViper for hot-reload support
+- docs: Mermaid bar chart replaces raw benchmark text
 
 ### Fixes
 - fix: add riscv64 support to boltdb/bolt via local patch
