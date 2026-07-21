@@ -1,14 +1,16 @@
 package database
 
 import (
+	"log/slog"
+	"math"
+	"strconv"
+	"strings"
+
 	SortedSet "github.com/hdt3213/godis/datastruct/sortedset"
 	"github.com/hdt3213/godis/interface/database"
 	"github.com/hdt3213/godis/interface/redis"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/redis/protocol"
-	"math"
-	"strconv"
-	"strings"
 )
 
 func (db *DB) getAsSortedSet(key string) (*SortedSet.SortedSet, protocol.ErrorReply) {
@@ -842,6 +844,226 @@ func execZScan(db *DB, args [][]byte) redis.Reply {
 	return protocol.MakeMultiRawReply(result)
 }
 
+type aggregateType int
+
+const (
+	aggregateSum aggregateType = iota
+	aggregateMin
+	aggregateMax
+)
+
+// parseZSetCombineArgs parses the common arguments for ZUNION/ZINTER
+func parseZSetCombineArgs(args [][]byte) (keys [][]byte, weights []float64, aggregate aggregateType, withScores bool, count int, errReply protocol.ErrorReply) {
+	slog.Debug("parseZSetCombineArgs")
+	if len(args) < 1 {
+		return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR wrong number of arguments")
+	}
+	numKeys, err := strconv.Atoi(string(args[0]))
+	if err != nil || numKeys < 1 {
+		return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR at least 1 input key is needed for ZUNION/ZINTER")
+	}
+	if len(args) < 1+numKeys {
+		return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR wrong number of arguments")
+	}
+	keys = args[1 : 1+numKeys]
+	args = args[1+numKeys:]
+
+	aggregate = aggregateSum
+	withScores = false
+	count = -1
+
+	for i := 0; i < len(args); i++ {
+		arg := strings.ToUpper(string(args[i]))
+		switch arg {
+		case "WEIGHTS":
+			i++
+			for ; i < len(args); i++ {
+				w, err := strconv.ParseFloat(string(args[i]), 64)
+				if err != nil {
+					return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR weight value is not a float")
+				}
+				weights = append(weights, w)
+			}
+		case "AGGREGATE":
+			i++
+			if i >= len(args) {
+				return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR wrong number of arguments")
+			}
+			switch strings.ToUpper(string(args[i])) {
+			case "SUM":
+				aggregate = aggregateSum
+			case "MIN":
+				aggregate = aggregateMin
+			case "MAX":
+				aggregate = aggregateMax
+			default:
+				return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR AGGREGATE must be SUM, MIN, or MAX")
+			}
+		case "WITHSCORES":
+			withScores = true
+		case "COUNT":
+			i++
+			if i >= len(args) {
+				return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR wrong number of arguments")
+			}
+			v, err := strconv.Atoi(string(args[i]))
+			if err != nil || v < 1 {
+				return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR COUNT must be a positive integer")
+			}
+			count = v
+		default:
+			return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR syntax error")
+		}
+	}
+
+	// Default weights
+	if weights == nil {
+		weights = make([]float64, len(keys))
+		for i := range weights {
+			weights[i] = 1.0
+		}
+	}
+	if len(weights) != len(keys) {
+		return nil, nil, 0, false, 0, protocol.MakeErrReply("ERR WEIGHTS and keys count mismatch")
+	}
+
+	return keys, weights, aggregate, withScores, count, nil
+}
+
+// zsetCombine is the shared logic for ZUNION and ZINTER
+func zsetCombine(db *DB, args [][]byte, union bool) redis.Reply {
+	keys, weights, aggregate, withScores, count, errReply := parseZSetCombineArgs(args)
+	if errReply != nil {
+		return errReply
+	}
+	slog.Debug("zsetCombine", "keys", len(keys))
+
+	// Load all sorted sets
+	sets := make([]*SortedSet.SortedSet, len(keys))
+	for i, key := range keys {
+		set, errReply := db.getAsSortedSet(string(key))
+		if errReply != nil {
+			slog.Error("zsetCombine failed to get sorted set", "key", string(key), "error", errReply.Error())
+			return errReply
+		}
+		if set == nil {
+			if union {
+				// For ZUNION, missing keys are treated as empty sets
+				sets[i] = SortedSet.Make()
+			} else {
+				// For ZINTER, if any key is missing, result is empty
+				if withScores {
+					return protocol.MakeEmptyMultiBulkReply()
+				}
+				return protocol.MakeEmptyMultiBulkReply()
+			}
+		} else {
+			sets[i] = set
+		}
+	}
+
+	// Collect combined scores
+	combined := make(map[string]float64)
+	memberSources := make(map[string]int)
+	sourceScores := make(map[string][]float64)
+
+	for i, set := range sets {
+		weight := weights[i]
+		set.ForEachByRank(0, set.Len(), false, func(element *SortedSet.Element) bool {
+			member := element.Member
+			weightedScore := element.Score * weight
+
+			if _, exists := combined[member]; !exists {
+				combined[member] = weightedScore
+				memberSources[member] = 1
+				sourceScores[member] = []float64{weightedScore}
+			} else {
+				memberSources[member]++
+				sourceScores[member] = append(sourceScores[member], weightedScore)
+				switch aggregate {
+				case aggregateSum:
+					combined[member] += weightedScore
+				case aggregateMin:
+					if weightedScore < combined[member] {
+						combined[member] = weightedScore
+					}
+				case aggregateMax:
+					if weightedScore > combined[member] {
+						combined[member] = weightedScore
+					}
+				}
+			}
+			return true
+		})
+	}
+
+	// For ZINTER, filter to members that appear in ALL sets
+	if !union {
+		for member, n := range memberSources {
+			if n < len(keys) {
+				delete(combined, member)
+			}
+		}
+	}
+
+	if len(combined) == 0 {
+		if withScores {
+			return protocol.MakeEmptyMultiBulkReply()
+		}
+		return protocol.MakeEmptyMultiBulkReply()
+	}
+
+	// Sort members by aggregate score (ascending)
+	type scoredMember struct {
+		member string
+		score  float64
+	}
+	sorted := make([]scoredMember, 0, len(combined))
+	for member, score := range combined {
+		sorted = append(sorted, scoredMember{member: member, score: score})
+	}
+	// Sort by score ascending, then by member name lexicographically for stability
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[j].score < sorted[i].score || (sorted[j].score == sorted[i].score && sorted[j].member < sorted[i].member) {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+
+	// Apply COUNT
+	if count > 0 && count < len(sorted) {
+		sorted = sorted[:count]
+	}
+
+	// Build result
+	if withScores {
+		result := make([][]byte, 0, len(sorted)*2)
+		for _, sm := range sorted {
+			result = append(result, []byte(sm.member))
+			result = append(result, []byte(strconv.FormatFloat(sm.score, 'f', -1, 64)))
+		}
+		return protocol.MakeMultiBulkReply(result)
+	}
+	result := make([][]byte, 0, len(sorted))
+	for _, sm := range sorted {
+		result = append(result, []byte(sm.member))
+	}
+	return protocol.MakeMultiBulkReply(result)
+}
+
+// execZUnion performs ZUNION with optional WEIGHTS, AGGREGATE, and COUNT options
+func execZUnion(db *DB, args [][]byte) redis.Reply {
+	slog.Info("ZUNION")
+	return zsetCombine(db, args, true)
+}
+
+// execZInter performs ZINTER with optional WEIGHTS, AGGREGATE, and COUNT options
+func execZInter(db *DB, args [][]byte) redis.Reply {
+	slog.Info("ZINTER")
+	return zsetCombine(db, args, false)
+}
+
 func init() {
 	registerCommand("ZAdd", execZAdd, writeFirstKey, undoZAdd, -4, flagWrite).
 		attachCommandExtra([]string{redisFlagWrite, redisFlagDenyOOM, redisFlagFast}, 1, 1, 1)
@@ -883,4 +1105,8 @@ func init() {
 		attachCommandExtra([]string{redisFlagReadonly}, 1, 1, 1)
 	registerCommand("ZScan", execZScan, readFirstKey, nil, -2, flagReadOnly).
 		attachCommandExtra([]string{redisFlagReadonly}, 1, 1, 1)
+	registerCommand("ZUnion", execZUnion, prepareZSetCombine, nil, -2, flagReadOnly).
+		attachCommandExtra([]string{redisFlagReadonly, redisFlagSortForScript}, 1, 1, 1)
+	registerCommand("ZInter", execZInter, prepareZSetCombine, nil, -2, flagReadOnly).
+		attachCommandExtra([]string{redisFlagReadonly, redisFlagSortForScript}, 1, 1, 1)
 }

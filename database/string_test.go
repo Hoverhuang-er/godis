@@ -813,3 +813,63 @@ func TestRandomkey(t *testing.T) {
 	actual := testDB.Exec(nil, utils.ToCmdLine("Randomkey"))
 	asserts.AssertNotError(t, actual)
 }
+
+func TestIncrex(t *testing.T) {
+	testDB.Flush()
+
+	key := utils.RandString(10)
+	actual := testDB.Exec(nil, utils.ToCmdLine("INCREX", key))
+	intReply, ok := actual.(*protocol.IntReply)
+	if !ok || intReply.Code != 1 {
+		t.Errorf("expected 1, got %v", actual.ToBytes())
+	}
+
+	actual = testDB.Exec(nil, utils.ToCmdLine("INCREX", key))
+	intReply, ok = actual.(*protocol.IntReply)
+	if !ok || intReply.Code != 2 {
+		t.Errorf("expected 2, got %v", actual.ToBytes())
+	}
+
+	key2 := utils.RandString(10)
+	actual = testDB.Exec(nil, utils.ToCmdLine("INCREX", key2, "BY", "5"))
+	intReply, ok = actual.(*protocol.IntReply)
+	if !ok || intReply.Code != 5 {
+		t.Errorf("expected 5, got %v", actual.ToBytes())
+	}
+
+	key3 := utils.RandString(10)
+	actual = testDB.Exec(nil, utils.ToCmdLine("INCREX", key3, "UBOUND", "10"))
+	intReply, ok = actual.(*protocol.IntReply)
+	if !ok || intReply.Code != 1 {
+		t.Errorf("expected 1, got %v", actual.ToBytes())
+	}
+
+	actual = testDB.Exec(nil, utils.ToCmdLine("INCREX", key3, "UBOUND", "1"))
+	if _, ok := actual.(*protocol.NullBulkReply); !ok {
+		t.Errorf("expected null bulk reply (rate limited), got %v", actual.ToBytes())
+	}
+
+	key4 := utils.RandString(10)
+	actual = testDB.Exec(nil, utils.ToCmdLine("INCREX", key4, "ENX"))
+	intReply, ok = actual.(*protocol.IntReply)
+	if !ok || intReply.Code != 1 {
+		t.Errorf("expected 1, got %v", actual.ToBytes())
+	}
+
+	actual = testDB.Exec(nil, utils.ToCmdLine("INCREX", key4, "ENX"))
+	if _, ok := actual.(*protocol.NullBulkReply); !ok {
+		t.Errorf("expected null bulk reply (ENX), got %v", actual.ToBytes())
+	}
+
+	key5 := utils.RandString(10)
+	actual = testDB.Exec(nil, utils.ToCmdLine("INCREX", key5, "EX", "10"))
+	intReply, ok = actual.(*protocol.IntReply)
+	if !ok || intReply.Code != 1 {
+		t.Errorf("expected 1, got %v", actual.ToBytes())
+	}
+	ttlActual := testDB.Exec(nil, utils.ToCmdLine("TTL", key5))
+	intReply, ok = ttlActual.(*protocol.IntReply)
+	if !ok || intReply.Code <= 0 || intReply.Code > 10 {
+		t.Errorf("expected TTL 1-10, got %v", ttlActual.ToBytes())
+	}
+}

@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/hdt3213/godis/interface/redis"
-	"github.com/hdt3213/godis/lib/logger"
 	"github.com/hdt3213/godis/lib/sync/atomic"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/redis/protocol"
+	"log/slog"
 )
 
 /*
@@ -104,11 +104,11 @@ func (server *Server) bgSaveForReplication() {
 	go func() {
 		defer func() {
 			if e := recover(); e != nil {
-				logger.Errorf("panic: %v", e)
+				slog.Error(fmt.Sprintf("panic: %v", e))
 			}
 		}()
 		if err := server.saveForReplication(); err != nil {
-			logger.Errorf("save for replication error: %v", err)
+			slog.Error(fmt.Sprintf("save for replication error: %v", err))
 		}
 	}()
 
@@ -152,7 +152,7 @@ func (server *Server) saveForReplication() error {
 		err = server.masterFullReSyncWithSlave(slave)
 		if err != nil {
 			server.removeSlave(slave)
-			logger.Errorf("masterFullReSyncWithSlave error: %v", err)
+			slog.Error(fmt.Sprintf("masterFullReSyncWithSlave error: %v", err))
 			continue
 		}
 	}
@@ -281,7 +281,7 @@ func (server *Server) masterSendUpdatesToSlave() error {
 		slaveBeginOffset := slave.offset - beginOffset
 		_, err := slave.conn.Write(backlog[slaveBeginOffset:])
 		if err != nil {
-			logger.Errorf("send updates backlog to slave failed: %v", err)
+			slog.Error(fmt.Sprintf("send updates backlog to slave failed: %v", err))
 			server.removeSlave(slave)
 			continue
 		}
@@ -317,7 +317,7 @@ func (server *Server) execPSync(c redis.Connection, args [][]byte) redis.Reply {
 		go func() {
 			defer func() {
 				if e := recover(); e != nil {
-					logger.Errorf("panic: %v", e)
+					slog.Error(fmt.Sprintf("panic: %v", e))
 				}
 			}()
 			err := server.masterTryPartialSyncWithSlave(slave, replId, replOffset)
@@ -326,13 +326,13 @@ func (server *Server) execPSync(c redis.Connection, args [][]byte) redis.Reply {
 			}
 			if err != cannotPartialSync {
 				server.removeSlave(slave)
-				logger.Errorf("masterTryPartialSyncWithSlave error: %v", err)
+				slog.Error(fmt.Sprintf("masterTryPartialSyncWithSlave error: %v", err))
 				return
 			}
 			// assert err == cannotPartialSync
 			if err := server.masterFullReSyncWithSlave(slave); err != nil {
 				server.removeSlave(slave)
-				logger.Errorf("masterFullReSyncWithSlave error: %v", err)
+				slog.Error(fmt.Sprintf("masterFullReSyncWithSlave error: %v", err))
 				return
 			}
 		}()
@@ -371,7 +371,7 @@ func (server *Server) removeSlave(slave *slaveClient) {
 	delete(server.masterStatus.slaveMap, slave.conn)
 	delete(server.masterStatus.waitSlaves, slave)
 	delete(server.masterStatus.onlineSlaves, slave)
-	logger.Info("disconnect with slave " + slave.conn.Name())
+	slog.Info("disconnect with slave " + slave.conn.Name())
 }
 
 func (server *Server) setSlaveOnline(slave *slaveClient, currentOffset int64) {
@@ -398,7 +398,7 @@ func (server *Server) masterCron() {
 	backlogSize := len(server.masterStatus.backlog.buf)
 	server.masterStatus.mu.Unlock()
 	if err := server.masterSendUpdatesToSlave(); err != nil {
-		logger.Errorf("masterSendUpdatesToSlave error: %v", err)
+			slog.Error(fmt.Sprintf("masterSendUpdatesToSlave error: %v", err))
 	}
 	if backlogSize > maxBacklogSize && !server.masterStatus.rewriting.Get() {
 		go func() {
@@ -406,7 +406,7 @@ func (server *Server) masterCron() {
 			defer server.masterStatus.rewriting.Set(false)
 			if err := server.rewriteRDB(); err != nil {
 				server.masterStatus.rewriting.Set(false)
-				logger.Errorf("rewrite error: %v", err)
+				slog.Error(fmt.Sprintf("rewrite error: %v", err))
 			}
 		}()
 	}
@@ -430,7 +430,7 @@ func (listener *replAofListener) Callback(cmdLines []CmdLine) {
 	// Do not send updates to slave before rdb saving is finished
 	if listener.readyToSend {
 		if err := listener.mdb.masterSendUpdatesToSlave(); err != nil {
-			logger.Errorf("masterSendUpdatesToSlave after receive aof error: %v", err)
+			slog.Error(fmt.Sprintf("masterSendUpdatesToSlave after receive aof error: %v", err))
 		}
 	}
 }

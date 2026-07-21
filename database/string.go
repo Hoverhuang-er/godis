@@ -1,6 +1,7 @@
 package database
 
 import (
+	"log/slog"
 	"math/bits"
 	"strconv"
 	"strings"
@@ -504,6 +505,121 @@ func execIncrByFloat(db *DB, args [][]byte) redis.Reply {
 	return protocol.MakeBulkReply(args[1])
 }
 
+// execIncrex increments value with optional upper bound and rate limiting (Redis 8.8.0)
+func execIncrex(db *DB, args [][]byte) redis.Reply {
+	key := string(args[0])
+	slog.Info("INCREX", "key", key)
+	args = args[1:]
+
+	var by int64 = 1
+	var ubound *int64
+	var ttl *time.Duration
+	enx := false
+
+	for i := 0; i < len(args); i++ {
+		arg := strings.ToUpper(string(args[i]))
+		switch arg {
+		case "BY":
+			i++
+			if i >= len(args) {
+				return protocol.MakeErrReply("ERR wrong number of arguments for 'INCREX' command")
+			}
+			v, err := strconv.ParseInt(string(args[i]), 10, 64)
+			if err != nil {
+				return protocol.MakeErrReply("ERR BY value is not an integer")
+			}
+			by = v
+		case "UBOUND":
+			i++
+			if i >= len(args) {
+				return protocol.MakeErrReply("ERR wrong number of arguments for 'INCREX' command")
+			}
+			v, err := strconv.ParseInt(string(args[i]), 10, 64)
+			if err != nil {
+				return protocol.MakeErrReply("ERR UBOUND value is not an integer")
+			}
+			ubound = &v
+		case "LBTIME":
+			i++
+			if i >= len(args) {
+				return protocol.MakeErrReply("ERR wrong number of arguments for 'INCREX' command")
+			}
+			v, err := strconv.ParseInt(string(args[i]), 10, 64)
+			if err != nil || v <= 0 {
+				return protocol.MakeErrReply("ERR LBTIME must be a positive integer")
+			}
+			d := time.Duration(v) * time.Second
+			ttl = &d
+		case "EX":
+			i++
+			if i >= len(args) {
+				return protocol.MakeErrReply("ERR wrong number of arguments for 'INCREX' command")
+			}
+			v, err := strconv.ParseInt(string(args[i]), 10, 64)
+			if err != nil {
+				return protocol.MakeErrReply("ERR invalid expire time in INCREX command")
+			}
+			d := time.Duration(v) * time.Second
+			ttl = &d
+		case "PX":
+			i++
+			if i >= len(args) {
+				return protocol.MakeErrReply("ERR wrong number of arguments for 'INCREX' command")
+			}
+			v, err := strconv.ParseInt(string(args[i]), 10, 64)
+			if err != nil {
+				return protocol.MakeErrReply("ERR invalid expire time in INCREX command")
+			}
+			d := time.Duration(v) * time.Millisecond
+			ttl = &d
+		case "ENX":
+			enx = true
+		default:
+			return protocol.MakeErrReply("ERR unknown option for INCREX: " + arg)
+		}
+	}
+
+	if enx {
+		_, exists := db.GetEntity(key)
+		if exists {
+			return protocol.MakeNullBulkReply()
+		}
+	}
+
+	var current int64 = 0
+	bytes, errReply := db.getAsString(key)
+	if errReply != nil {
+		slog.Error("INCREX failed", "key", key, "error", errReply.Error())
+		return errReply
+	}
+	if bytes != nil {
+		v, err := strconv.ParseInt(string(bytes), 10, 64)
+		if err != nil {
+			slog.Error("INCREX failed", "key", key, "error", "value is not an integer or out of range")
+			return protocol.MakeErrReply("ERR value is not an integer or out of range")
+		}
+		current = v
+	}
+
+	newVal := current + by
+
+	if ubound != nil && newVal > *ubound {
+		return protocol.MakeNullBulkReply()
+	}
+
+	db.PutEntity(key, &database.DataEntity{
+		Data: []byte(strconv.FormatInt(newVal, 10)),
+	})
+	if ttl != nil {
+		db.Expire(key, time.Now().Add(*ttl))
+	}
+	db.addAof(aof.EntityToCmd(key, &database.DataEntity{
+		Data: []byte(strconv.FormatInt(newVal, 10)),
+	}).Args)
+
+	return protocol.MakeIntReply(newVal)
+}
+
 // execDecr decrements the integer value of a key by one
 func execDecr(db *DB, args [][]byte) redis.Reply {
 	key := string(args[0])
@@ -858,6 +974,8 @@ func init() {
 	registerCommand("GetDel", execGetDel, writeFirstKey, rollbackFirstKey, 2, flagWrite).
 		attachCommandExtra([]string{redisFlagWrite, redisFlagDenyOOM}, 1, 1, 1)
 	registerCommand("Incr", execIncr, writeFirstKey, rollbackFirstKey, 2, flagWrite).
+		attachCommandExtra([]string{redisFlagWrite, redisFlagDenyOOM, redisFlagFast}, 1, 1, 1)
+	registerCommand("Increx", execIncrex, writeFirstKey, rollbackFirstKey, -2, flagWrite).
 		attachCommandExtra([]string{redisFlagWrite, redisFlagDenyOOM, redisFlagFast}, 1, 1, 1)
 	registerCommand("IncrBy", execIncrBy, writeFirstKey, rollbackFirstKey, 3, flagWrite).
 		attachCommandExtra([]string{redisFlagWrite, redisFlagDenyOOM}, 1, 1, 1)

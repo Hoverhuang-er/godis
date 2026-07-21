@@ -17,12 +17,12 @@ import (
 	"github.com/hdt3213/godis/aof"
 	"github.com/hdt3213/godis/config"
 	"github.com/hdt3213/godis/interface/redis"
-	"github.com/hdt3213/godis/lib/logger"
 	rdb "github.com/hdt3213/rdb/parser"
 	"github.com/hdt3213/godis/lib/utils"
 	"github.com/hdt3213/godis/redis/connection"
 	"github.com/hdt3213/godis/redis/parser"
 	"github.com/hdt3213/godis/redis/protocol"
+	"log/slog"
 )
 
 const (
@@ -119,7 +119,7 @@ func (repl *slaveStatus) close() error {
 func (server *Server) setupMaster() {
 	defer func() {
 		if err := recover(); err != nil {
-			logger.Error(err)
+			slog.Error(fmt.Sprintf("%v", err))
 		}
 	}()
 	var configVersion int32
@@ -132,7 +132,7 @@ func (server *Server) setupMaster() {
 	isFullReSync, err := server.connectWithMaster(configVersion)
 	if err != nil {
 		// connect failed, abort master
-		logger.Error(err)
+		slog.Error(err.Error())
 		server.slaveOfNone()
 		return
 	}
@@ -140,7 +140,7 @@ func (server *Server) setupMaster() {
 		err = server.loadMasterRDB(configVersion)
 		if err != nil {
 			// load failed, abort master
-			logger.Error(err)
+			slog.Error(err.Error())
 			server.slaveOfNone()
 			return
 		}
@@ -148,7 +148,7 @@ func (server *Server) setupMaster() {
 	err = server.receiveAOF(ctx, configVersion)
 	if err != nil {
 		// full sync failed, abort
-		logger.Error(err)
+		slog.Error(err.Error())
 		return
 	}
 }
@@ -180,7 +180,7 @@ func (server *Server) connectWithMaster(configVersion int32) (bool, error) {
 		if !strings.HasPrefix(reply.Error(), "NOAUTH") &&
 			!strings.HasPrefix(reply.Error(), "NOPERM") &&
 			!strings.HasPrefix(reply.Error(), "ERR operation not permitted") {
-			logger.Error("Error reply to PING from master: " + string(reply.ToBytes()))
+			slog.Error("Error reply to PING from master: " + string(reply.ToBytes()))
 			server.slaveOfNone() // abort
 			return false, nil
 		}
@@ -290,15 +290,15 @@ func (server *Server) parsePsyncHandshake() (bool, error) {
 		return false, errors.New("illegal payload header: " + psyncHeader.Status)
 	}
 
-	logger.Info("receive psync header from master")
+	slog.Info("receive psync header from master")
 	var isFullReSync bool
 	if headers[0] == "FULLRESYNC" {
-		logger.Info("full re-sync with master")
+		slog.Info("full re-sync with master")
 		server.slaveStatus.replId = headers[1]
 		server.slaveStatus.replOffset, err = strconv.ParseInt(headers[2], 10, 64)
 		isFullReSync = true
 	} else if headers[0] == "CONTINUE" {
-		logger.Info("continue partial sync")
+		slog.Info("continue partial sync")
 		server.slaveStatus.replId = headers[1]
 		isFullReSync = false
 	} else {
@@ -308,7 +308,7 @@ func (server *Server) parsePsyncHandshake() (bool, error) {
 	if err != nil {
 		return false, errors.New("get illegal repl offset: " + headers[2])
 	}
-	logger.Info(fmt.Sprintf("repl id: %s, current offset: %d", server.slaveStatus.replId, server.slaveStatus.replOffset))
+	slog.Info(fmt.Sprintf("repl id: %s, current offset: %d", server.slaveStatus.replId, server.slaveStatus.replOffset))
 	return isFullReSync, nil
 }
 
@@ -342,7 +342,7 @@ func (server *Server) loadMasterRDB(configVersion int32) error {
 		return errors.New("illegal payload header: " + string(rdbPayload.Data.ToBytes()))
 	}
 
-	logger.Info(fmt.Sprintf("receive %d bytes of rdb from master", len(rdbReply.Arg)))
+	slog.Info(fmt.Sprintf("receive %d bytes of rdb from master", len(rdbReply.Arg)))
 	rdbDec := rdb.NewDecoder(bytes.NewReader(rdbReply.Arg))
 
 	rdbLoader, newAofFilename, err := makeRdbLoader(config.Properties.AppendOnly)
@@ -409,7 +409,7 @@ func (server *Server) receiveAOF(ctx context.Context, configVersion int32) error
 			n := len(cmdLine.ToBytes()) // todo: directly get size from socket
 			server.slaveStatus.replOffset += int64(n)
 			server.slaveStatus.lastRecvTime = time.Now()
-			logger.Info(fmt.Sprintf("receive %d bytes from master, current offset %d, %s",
+			slog.Info(fmt.Sprintf("receive %d bytes from master, current offset %d, %s",
 				n, server.slaveStatus.replOffset, strconv.Quote(string(cmdLine.ToBytes()))))
 			server.slaveStatus.mutex.Unlock()
 		case <-ctx.Done():
@@ -435,14 +435,14 @@ func (server *Server) slaveCron() {
 		// reconnect with master
 		err := server.reconnectWithMaster()
 		if err != nil {
-			logger.Error("send failed " + err.Error())
+			slog.Error("send failed " + err.Error())
 		}
 		return
 	}
 	// send ack to master
 	err := repl.sendAck2Master()
 	if err != nil {
-		logger.Error("send failed " + err.Error())
+		slog.Error("send failed " + err.Error())
 	}
 }
 
@@ -452,12 +452,12 @@ func (repl *slaveStatus) sendAck2Master() error {
 		strconv.FormatInt(repl.replOffset, 10))
 	psyncReq := protocol.MakeMultiBulkReply(psyncCmdLine)
 	_, err := repl.masterConn.Write(psyncReq.ToBytes())
-	// logger.Info("send ack to master")
+	// slog.Info("send ack to master")
 	return err
 }
 
 func (server *Server) reconnectWithMaster() error {
-	logger.Info("reconnecting with master")
+	slog.Info("reconnecting with master")
 	server.slaveStatus.mutex.Lock()
 	defer server.slaveStatus.mutex.Unlock()
 	server.slaveStatus.stopSlaveWithMutex()

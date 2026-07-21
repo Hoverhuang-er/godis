@@ -3,6 +3,7 @@ package database
 import (
 	"github.com/hdt3213/godis/aof"
 	"github.com/hdt3213/godis/lib/utils"
+	"log/slog"
 	"strconv"
 )
 
@@ -105,6 +106,23 @@ func prepareSetCalculateStore(args [][]byte) ([]string, []string) {
 		keys[i] = string(arg)
 	}
 	return []string{dest}, keys
+}
+
+// prepareZSetCombine returns the keys to read for ZUNION/ZINTER transaction
+func prepareZSetCombine(args [][]byte) ([]string, []string) {
+	if len(args) < 1 {
+		return nil, nil
+	}
+	numKeys, err := strconv.Atoi(string(args[0]))
+	if err != nil || numKeys < 1 || numKeys > len(args)-1 {
+		return nil, nil
+	}
+	slog.Debug("prepareZSetCombine", "numKeys", numKeys)
+	keys := make([]string, numKeys)
+	for i := 0; i < numKeys; i++ {
+		keys[i] = string(args[1+i])
+	}
+	return nil, keys
 }
 
 func rollbackSetMembers(db *DB, key string, members ...string) []CmdLine {

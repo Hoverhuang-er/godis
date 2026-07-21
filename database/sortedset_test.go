@@ -763,6 +763,77 @@ func TestZRevRangeByLex(t *testing.T) {
 	asserts.AssertMultiBulkReply(t, result30, []string{"c", "b"})
 }
 
+func TestZUnionAndInter(t *testing.T) {
+	testDB.Flush()
+
+	key1 := utils.RandString(10)
+	key2 := utils.RandString(10)
+
+	testDB.Exec(nil, utils.ToCmdLine("ZADD", key1, "1", "a", "2", "b", "3", "c"))
+	testDB.Exec(nil, utils.ToCmdLine("ZADD", key2, "10", "a", "20", "b", "30", "d"))
+
+	actual := testDB.Exec(nil, utils.ToCmdLine("ZUNION", "2", key1, key2))
+	multiBulk, ok := actual.(*protocol.MultiBulkReply)
+	if !ok {
+		t.Fatalf("expected MultiBulkReply, got %T", actual)
+	}
+	if len(multiBulk.Args) != 4 {
+		t.Fatalf("expected 4 members, got %d", len(multiBulk.Args))
+	}
+
+	actual = testDB.Exec(nil, utils.ToCmdLine("ZUNION", "2", key1, key2, "WITHSCORES"))
+	multiBulk, ok = actual.(*protocol.MultiBulkReply)
+	if !ok {
+		t.Fatalf("expected MultiBulkReply, got %T", actual)
+	}
+	args := multiBulk.Args
+	if string(args[0]) != "c" || string(args[2]) != "a" || string(args[4]) != "b" || string(args[6]) != "d" {
+		t.Errorf("unexpected order: got %v", args)
+	}
+
+	actual = testDB.Exec(nil, utils.ToCmdLine("ZUNION", "2", key1, key2, "WITHSCORES", "COUNT", "2"))
+	multiBulk, ok = actual.(*protocol.MultiBulkReply)
+	if !ok {
+		t.Fatalf("expected MultiBulkReply, got %T", actual)
+	}
+	if len(multiBulk.Args) != 4 {
+		t.Fatalf("expected 4 elements (2 members + 2 scores), got %d", len(multiBulk.Args))
+	}
+	if string(multiBulk.Args[0]) != "c" || string(multiBulk.Args[2]) != "a" {
+		t.Errorf("expected top 2: c, a; got %v", multiBulk.Args)
+	}
+
+	actual = testDB.Exec(nil, utils.ToCmdLine("ZINTER", "2", key1, key2))
+	multiBulk, ok = actual.(*protocol.MultiBulkReply)
+	if !ok {
+		t.Fatalf("expected MultiBulkReply, got %T", actual)
+	}
+	if len(multiBulk.Args) != 2 {
+		t.Fatalf("expected 2 members (a, b), got %d", len(multiBulk.Args))
+	}
+
+	actual = testDB.Exec(nil, utils.ToCmdLine("ZINTER", "2", key1, key2, "AGGREGATE", "MIN", "WITHSCORES"))
+	multiBulk, ok = actual.(*protocol.MultiBulkReply)
+	if !ok {
+		t.Fatalf("expected MultiBulkReply, got %T", actual)
+	}
+	if string(multiBulk.Args[0]) != "a" || string(multiBulk.Args[2]) != "b" {
+		t.Errorf("unexpected order: got %v", multiBulk.Args)
+	}
+
+	actual = testDB.Exec(nil, utils.ToCmdLine("ZINTER", "2", key1, key2, "WITHSCORES", "COUNT", "1"))
+	multiBulk, ok = actual.(*protocol.MultiBulkReply)
+	if !ok {
+		t.Fatalf("expected MultiBulkReply, got %T", actual)
+	}
+	if len(multiBulk.Args) != 2 {
+		t.Fatalf("expected 2 elements (1 member + 1 score), got %d", len(multiBulk.Args))
+	}
+	if string(multiBulk.Args[0]) != "a" {
+		t.Errorf("expected top 1: a; got %v", multiBulk.Args)
+	}
+}
+
 func TestZScan(t *testing.T) {
 	testDB.Flush()
 	zsetKey := "zsetkey"
