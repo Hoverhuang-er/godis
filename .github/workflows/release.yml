@@ -67,11 +67,15 @@ jobs:
           path: godis_${{ matrix.os }}_${{ matrix.arch }}.zip
 
   # ---- Docker: godis image ----
+  # ---- Docker: godis image (per-arch matrix) ----
   godis-image:
-    name: Build and Push Godis Docker Image
+    name: Godis Docker ${{ matrix.target }}
     needs: build
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [linux/amd64, linux/arm64, linux/riscv64]
     steps:
       - uses: actions/checkout@v4
 
@@ -86,31 +90,59 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ env.REPO_LC }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-
-      - uses: docker/build-push-action@v6
+      - name: Build and push (${{ matrix.target }})
+        uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64,linux/riscv64
+          platforms: ${{ matrix.target }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ghcr.io/${{ env.REPO_LC }}:${{ github.ref_name }}-${{ matrix.target }}
+          labels: |
+            org.opencontainers.image.title=godis
+            org.opencontainers.image.version=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ---- Docker: operator image ----
+  # ---- Docker: godis multi-arch manifest ----
+  godis-manifest:
+    name: Godis Docker Manifest
+    needs: godis-image
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set lowercase repository
+        run: echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifest
+        run: |
+          REPO="ghcr.io/$REPO_LC"
+          TAG="${{ github.ref_name }}"
+          MAJOR_MINOR=$(echo "$TAG" | sed 's/^v//; s/\.[^.]*$//')
+          MAJOR=$(echo "$MAJOR_MINOR" | cut -d. -f1)
+
+          for t in "$TAG" "$MAJOR_MINOR" "$MAJOR" "latest"; do
+            docker manifest create "$REPO:$t" \
+              --amend "$REPO:$TAG-linux/amd64" \
+              --amend "$REPO:$TAG-linux/arm64" \
+              --amend "$REPO:$TAG-linux/riscv64"
+            docker manifest push "$REPO:$t"
+          done
+
+  # ---- Docker: operator image (per-arch matrix) ----
   operator-image:
-    name: Build and Push Operator Docker Image
+    name: Operator Docker ${{ matrix.target }}
     needs: build
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [linux/amd64, linux/arm64]
     steps:
       - uses: actions/checkout@v4
 
@@ -125,17 +157,45 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v6
+      - name: Build and push (${{ matrix.target }})
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.operator
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.target }}
           push: true
-          tags: |
-            ghcr.io/${{ env.REPO_LC }}/operator:${{ github.ref_name }}
-            ghcr.io/${{ env.REPO_LC }}/operator:latest
+          tags: ghcr.io/${{ env.REPO_LC }}/operator:${{ github.ref_name }}-${{ matrix.target }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ---- Docker: operator multi-arch manifest ----
+  operator-manifest:
+    name: Operator Docker Manifest
+    needs: operator-image
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set lowercase repository
+        run: echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifest
+        run: |
+          REPO="ghcr.io/$REPO_LC/operator"
+          TAG="${{ github.ref_name }}"
+          docker manifest create "$REPO:$TAG" \
+            --amend "$REPO:$TAG-linux/amd64" \
+            --amend "$REPO:$TAG-linux/arm64"
+          docker manifest push "$REPO:$TAG"
+          docker manifest create "$REPO:latest" \
+            --amend "$REPO:$TAG-linux/amd64" \
+            --amend "$REPO:$TAG-linux/arm64"
+          docker manifest push "$REPO:latest"
 
   # ---- Helm chart ----
   helm-chart:
@@ -160,7 +220,6 @@ jobs:
 
       - name: Push Helm Chart to GHCR
         run: helm push .tmp/godis-*.tgz oci://ghcr.io/${{ env.REPO_LC }}/charts
-
   # ---- GitHub Release ----
   release:
     name: Create Release
