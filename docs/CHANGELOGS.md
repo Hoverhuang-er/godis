@@ -7,17 +7,10 @@
 - feat(release): build and push multi-arch Docker image to GHCR
 - feat: Prometheus metrics with hot/big key monitoring (redis_exporter compatible)
 - feat: `--cli` flag for built-in redis-cli (supports `-h`, `-p`, `-a` flags)
+- feat: Entra ID (Azure AD) token-based authentication with JWKS validation
+- feat: `--entra-tenant` / `--entra-app` flags for CLI Entra ID auth
+- feat: redis-vl-golang compatibility — FT.SEARCH score format, FT.INFO schema
 - feat: HyperLogLog — PFADD, PFCOUNT, PFMERGE
-- feat: Bloom filter — BF.RESERVE, BF.ADD, BF.EXISTS, BF.MADD, BF.MEXISTS, BF.INFO
-- feat: T-Digest — TDIGEST.CREATE, TDIGEST.ADD, TDIGEST.QUANTILE, TDIGEST.INFO, TDIGEST.RESET, TDIGEST.MERGE
-- feat: Top-K — TOPK.RESERVE, TOPK.ADD, TOPK.COUNT, TOPK.QUERY, TOPK.LIST
-- feat: Count-Min Sketch — CMS.INITBYDIM, CMS.INITBYPROB, CMS.INCRBY, CMS.QUERY, CMS.MERGE, CMS.INFO
-- feat: Bitfield — BITFIELD, BITFIELD_RO
-- feat: RedisJSON — JSON.SET, JSON.GET, JSON.DEL, JSON.TYPE, JSON.STRLEN, JSON.NUMINCRBY, JSON.NUMMULTBY, JSON.OBJLEN, JSON.OBJKEYS, JSON.ARRAPPEND, JSON.ARRPOP, JSON.ARRTRIM, JSON.ARRINSERT, JSON.CLEAR, JSON.TOGGLE, JSON.STRAPPEND
-
-### Improvements
-- refactor: restructure project to Go Project Layout
-- cleanup: remove legacy .conf, merge build scripts into Makefile
 - chore: rename module to github.com/Hoverhuang-er/godis
 - build: GOEXPERIMENT=greenteagc for GC tuning (GCPercent=40, thread pinning)
 - build: GOAMD64=v3 for x86-64 SIMD (AVX2, AVX, FMA, BMI instruction set)

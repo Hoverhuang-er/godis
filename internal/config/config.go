@@ -60,6 +60,8 @@ type ServerProperties struct {
 	MasterInCluster      string `cfg:"master-in-cluster" toml:"master_in_cluster"`
 	ClusterWorkerPool    bool   `cfg:"cluster-worker-pool" toml:"cluster_worker_pool"`
 	ClusterRelayParallel bool   `cfg:"cluster-relay-parallel" toml:"cluster_relay_parallel"`
+	AzureEntraTenantID   string `cfg:"azure-entra-tenant-id" toml:"azure_entra_tenant_id"`
+	AzureEntraAppID      string `cfg:"azure-entra-app-id" toml:"azure_entra_app_id"`
 }
 
 var configFilePath string
@@ -103,6 +105,8 @@ func init() {
 		PrometheusPort:       9121,
 		ClusterWorkerPool:    true,
 		ClusterRelayParallel: true,
+		AzureEntraTenantID:   "",
+		AzureEntraAppID:      "",
 	}
 }
 
@@ -177,6 +181,9 @@ func populateFromViper(v *viper.Viper) {
 	Properties.MasterInCluster = getStr(v, "cluster.master_in_cluster", Properties.MasterInCluster)
 
 	Properties.ClusterWorkerPool = getBool(v, "cluster.worker_pool", Properties.ClusterWorkerPool)
+
+	Properties.AzureEntraTenantID = getStr(v, "azure.entra_tenant_id", Properties.AzureEntraTenantID)
+	Properties.AzureEntraAppID = getStr(v, "azure.entra_app_id", Properties.AzureEntraAppID)
 	Properties.ClusterRelayParallel = getBool(v, "cluster.relay_parallel", Properties.ClusterRelayParallel)
 
 	Properties.PrometheusEnabled = getBool(v, "monitoring.prometheus_enabled", Properties.PrometheusEnabled)

@@ -38,3 +38,8 @@ worker_pool = true
 
 # Enable parallel relay for multi-node transactions (cluster mode only)
 relay_parallel = true
+
+[azure]
+# Azure Entra ID authentication (optional)
+# entra_tenant_id = ""
+# entra_app_id = ""

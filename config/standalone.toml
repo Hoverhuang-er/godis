@@ -70,6 +70,12 @@ worker_pool = true
 # Enable parallel relay for multi-node transactions (cluster mode only)
 relay_parallel = true
 
+[azure]
+# Azure Entra ID (formerly Azure AD) authentication
+# Enable to accept Entra ID access tokens as AUTH credentials
+# entra_tenant_id = "your-tenant-id"
+# entra_app_id = "your-app-id"
+
 [slowlog]
 # Commands slower than this threshold (microseconds) are logged
 log_slower_than = 10000

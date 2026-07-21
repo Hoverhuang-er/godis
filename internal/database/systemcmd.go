@@ -2,14 +2,16 @@ package database
 
 import (
 	"fmt"
-	"github.com/Hoverhuang-er/godis/internal/config"
-	"github.com/Hoverhuang-er/godis/internal/interface/redis"
-	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
-	"github.com/Hoverhuang-er/godis/internal/tcp"
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/Hoverhuang-er/godis/internal/auth/entraid"
+	"github.com/Hoverhuang-er/godis/internal/config"
+	"github.com/Hoverhuang-er/godis/internal/interface/redis"
+	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 )
 
 // Ping the server
@@ -51,16 +53,28 @@ func Info(db *Server, args [][]byte) redis.Reply {
 	return protocol.MakeArgNumErrReply("info")
 }
 
-// Auth validate client's password
+// Auth validate client's password or Entra ID token
 func Auth(c redis.Connection, args [][]byte) redis.Reply {
 	if len(args) != 1 {
 		return protocol.MakeErrReply("ERR wrong number of arguments for 'auth' command")
 	}
+	passwd := string(args[0])
+	c.SetPassword(passwd)
+
+	// Check Entra ID token first if configured
+	if config.Properties.AzureEntraTenantID != "" && config.Properties.AzureEntraAppID != "" {
+		if strings.HasPrefix(passwd, "eyJ") || len(passwd) > 100 {
+			claims, err := validateEntraToken(passwd)
+			if err == nil && claims != nil {
+				c.SetPassword("__entraid_" + claims.Subject)
+				return &protocol.OkReply{}
+			}
+		}
+	}
+
 	if config.Properties.RequirePass == "" {
 		return protocol.MakeErrReply("ERR Client sent AUTH, but no password is set")
 	}
-	passwd := string(args[0])
-	c.SetPassword(passwd)
 	if config.Properties.RequirePass != passwd {
 		return protocol.MakeErrReply("ERR invalid password")
 	}
@@ -68,10 +82,14 @@ func Auth(c redis.Connection, args [][]byte) redis.Reply {
 }
 
 func isAuthenticated(c redis.Connection) bool {
-	if config.Properties.RequirePass == "" {
+	if config.Properties.RequirePass == "" && config.Properties.AzureEntraTenantID == "" {
 		return true
 	}
-	return c.GetPassword() == config.Properties.RequirePass
+	pass := c.GetPassword()
+	if pass != "" && strings.HasPrefix(pass, "__entraid_") {
+		return true
+	}
+	return pass != "" && pass == config.Properties.RequirePass
 }
 
 func DbSize(c redis.Connection, db *Server) redis.Reply {
@@ -124,8 +142,7 @@ func GenGodisInfoString(section string, db *Server) []byte {
 			"connected_clients:%d\r\n",
 			//"client_recent_max_input_buffer:%d\r\n"+
 			//"client_recent_max_output_buffer:%d\r\n"+
-			//"blocked_clients:%d\n",
-			tcp.ClientCounter,
+			0, // TODO: expose tcp.ClientCounter
 			//TODO,
 			//TODO,
 			//TODO,
@@ -180,4 +197,23 @@ func getDbSize(dbIndex, keys, expiresKeys int, ttl int64) []byte {
 	s := fmt.Sprintf("db%d:keys=%d,expires=%d,avg_ttl=%d\r\n",
 		dbIndex, keys, expiresKeys, ttl)
 	return []byte(s)
+}
+
+var (
+	entraValidatorOnce sync.Once
+	entraValidator     *entraid.Validator
+)
+
+func validateEntraToken(token string) (*entraid.TokenClaims, error) {
+	entraValidatorOnce.Do(func() {
+		tenantID := config.Properties.AzureEntraTenantID
+		appID := config.Properties.AzureEntraAppID
+		if tenantID != "" && appID != "" {
+			entraValidator = entraid.NewValidator(tenantID, appID)
+		}
+	})
+	if entraValidator == nil {
+		return nil, fmt.Errorf("Entra ID not configured")
+	}
+	return entraValidator.ValidateToken(token)
 }

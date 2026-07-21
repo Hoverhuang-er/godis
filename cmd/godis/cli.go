@@ -16,9 +16,11 @@ import (
 )
 
 type cliFlags struct {
-	host string
-	port int
-	auth string
+	host        string
+	port        int
+	auth        string
+	entraTenant string
+	entraApp    string
 }
 
 func parseCLIFlags() cliFlags {
@@ -45,6 +47,16 @@ func parseCLIFlags() cliFlags {
 			if i+1 < len(args) {
 				i++
 				f.auth = args[i]
+			}
+		case "--entra-tenant":
+			if i+1 < len(args) {
+				i++
+				f.entraTenant = args[i]
+			}
+		case "--entra-app":
+			if i+1 < len(args) {
+				i++
+				f.entraApp = args[i]
 			}
 		}
 	}
