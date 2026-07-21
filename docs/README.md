@@ -20,6 +20,7 @@ Key Features:
 - RediSearch (FT.CREATE, FT.SEARCH, FT.DROPINDEX, etc.)
 - Time Series (TS.CREATE, TS.ADD, TS.GET, TS.RANGE, etc.)
 - Redis-Vector (VECTOR field type, KNN search)
+- RedisJSON (JSON.SET, JSON.GET, JSON.DEL, JSON.ARRAPPEND, JSON.OBJKEYS, etc.)
 - Concurrent Core for better performance
 - TTL
 - Publish/Subscribe

@@ -7,6 +7,10 @@
 - feat(release): build and push multi-arch Docker image to GHCR
 - feat: Prometheus metrics with hot/big key monitoring (redis_exporter compatible)
 - feat: `--cli` flag for built-in redis-cli (supports `-h`, `-p`, `-a` flags)
+- feat: RedisJSON — JSON.SET, JSON.GET, JSON.DEL, JSON.TYPE, JSON.STRLEN
+- feat: RedisJSON — JSON.NUMINCRBY, JSON.NUMMULTBY, JSON.OBJLEN, JSON.OBJKEYS
+- feat: RedisJSON — JSON.ARRAPPEND, JSON.ARRPOP, JSON.ARRTRIM, JSON.ARRINSERT
+- feat: RedisJSON — JSON.CLEAR, JSON.TOGGLE, JSON.STRAPPEND (16 commands total)
 
 ### Improvements
 - refactor: restructure project to Go Project Layout
