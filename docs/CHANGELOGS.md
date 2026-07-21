@@ -21,6 +21,9 @@
 - perf: RelayWorkerPool — channel-based goroutine pool per peer for async relay
 - perf: parallel relay helper with early-error cancellation (context cancellation)
 - config: add cluster.worker_pool and cluster.relay_parallel options (default: true)
+- fix: FT.SEARCH response format now includes scores per Redis Stack spec
+- fix: auto-index string SET keys via search.IndexDocByPrefix
+- fix: auto-remove DEL keys from search indexes via search.RemoveDocByPrefix
 - docs: Prometheus monitoring section in EN, CN, JA, FI READMEs
 - docs: fix language links (blob/master/ → blob/master/docs/)
 - docs: add root README.md symlink for GitHub homepage rendering

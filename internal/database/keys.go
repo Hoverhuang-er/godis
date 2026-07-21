@@ -1,19 +1,21 @@
 package database
 
 import (
+	"math"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/Hoverhuang-er/godis/internal/aof"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/dict"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/list"
+	"github.com/Hoverhuang-er/godis/internal/datastruct/search"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/set"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/sortedset"
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
 	"github.com/Hoverhuang-er/godis/internal/lib/wildcard"
 	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
-	"math"
-	"strconv"
-	"strings"
-	"time"
 )
 
 // execDel removes a key from db
@@ -26,6 +28,10 @@ func execDel(db *DB, args [][]byte) redis.Reply {
 	deleted := db.Removes(keys...)
 	if deleted > 0 {
 		db.addAof(utils.ToCmdLine3("del", args...))
+		// Remove deleted keys from search indexes
+		for _, key := range keys {
+			search.RemoveDocByPrefix(key)
+		}
 	}
 	return protocol.MakeIntReply(int64(deleted))
 }

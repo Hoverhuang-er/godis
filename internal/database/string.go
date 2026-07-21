@@ -9,6 +9,7 @@ import (
 
 	"github.com/Hoverhuang-er/godis/internal/aof"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/bitmap"
+	"github.com/Hoverhuang-er/godis/internal/datastruct/search"
 	"github.com/Hoverhuang-er/godis/internal/interface/database"
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
@@ -209,8 +210,10 @@ func execSet(db *DB, args [][]byte) redis.Reply {
 			db.addAof(utils.ToCmdLine3("set", args...))
 		}
 	}
-
 	if result > 0 {
+		// Index string key for RediSearch if it matches a registered index prefix
+		fields := map[string]string{"value": string(value)}
+		search.IndexDocByPrefix(key, fields)
 		return &protocol.OkReply{}
 	}
 	return &protocol.NullBulkReply{}

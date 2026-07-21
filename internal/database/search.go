@@ -249,11 +249,15 @@ func execFTSearch(db *DB, args [][]byte) redis.Reply {
 		results = results[:limit]
 	}
 
-	resp := make([][]byte, 0, 1+len(results)*2)
+	// Redis Stack FT.SEARCH response format:
+	// [total, key1, score1, [field1, val1, ...], key2, score2, [field2, val2, ...]]
+	resp := make([][]byte, 0, 1+len(results)*3)
 	resp = append(resp, []byte(strconv.Itoa(total)))
 
 	for _, doc := range results {
 		resp = append(resp, []byte(doc.Key))
+		scoreStr := strconv.FormatFloat(doc.Score, 'f', 4, 64)
+		resp = append(resp, []byte(scoreStr))
 		fieldPairs := make([][]byte, 0, len(doc.Fields)*2)
 		for k, v := range doc.Fields {
 			fieldPairs = append(fieldPairs, []byte(k))
