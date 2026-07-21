@@ -17,6 +17,13 @@ Key Features:
 
 - Redis 8.8.0 command compatibility
 - Support string, list, hash, set, sorted set, bitmap
+- HyperLogLog (PFADD, PFCOUNT, PFMERGE)
+- Bloom filter (BF.ADD, BF.EXISTS, BF.RESERVE)
+- T-Digest (TDIGEST.ADD, TDIGEST.QUANTILE)
+- Top-K (TOPK.ADD, TOPK.QUERY, TOPK.LIST)
+- Count-min sketch (CMS.INCRBY, CMS.QUERY)
+- Geospatial indexes (GEOADD, GEOSEARCH, etc.)
+- Bitfield (BITFIELD, BITFIELD_RO)
 - RediSearch (FT.CREATE, FT.SEARCH, FT.DROPINDEX, etc.)
 - Time Series (TS.CREATE, TS.ADD, TS.GET, TS.RANGE, etc.)
 - Redis-Vector (VECTOR field type, KNN search)
@@ -24,6 +31,7 @@ Key Features:
 - Concurrent Core for better performance
 - TTL
 - Publish/Subscribe
+- Streams (XADD, XREAD, XGROUP, etc.)
 - GEO
 - AOF and AOF Rewrite
 - RDB read and write
@@ -31,9 +39,9 @@ Key Features:
 - Transaction is **Atomic** and Isolated. If any errors are encountered during execution, godis will rollback the executed commands
 - Replication
 - Server-side Cluster which is transparent to client. You can connect to any node in the cluster to access all data in the cluster.
-  - Cluster metadata management based on Raft. Support dynamic expansion, rebalancing and failover.
-  - `MSET`, `MSETNX`, `DEL`, `Rename`, `RenameNX` command is supported and atomically executed in cluster mode, allow over multi node.
-  - `MULTI` Commands Transaction is supported within slot in cluster mode
+- Cluster metadata management based on Raft. Support dynamic expansion, rebalancing and failover.
+- `MSET`, `MSETNX`, `DEL`, `Rename`, `RenameNX` command is supported and atomically executed in cluster mode, allow over multi node.
+- `MULTI` Commands Transaction is supported within slot in cluster mode
 
 If you could read Chinese, you can find more details in [My Blog](https://www.cnblogs.com/Finley/category/1598973.html).
 
