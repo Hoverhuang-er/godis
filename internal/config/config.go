@@ -108,8 +108,8 @@ func init() {
 		AzureEntraTenantID:   "",
 		AzureEntraAppID:      "",
 	}
+	EachTimeServerInfo = &ServerInfo{}
 }
-
 //go:embed default.toml
 var defaultConfigContent string
 
@@ -128,6 +128,8 @@ func SetupConfig(configFilename string) {
 	v := viper.New()
 	v.SetConfigFile(configFilename)
 
+
+	EachTimeServerInfo.StartUpTime = time.Now()
 	if err := v.ReadInConfig(); err != nil {
 		slog.Warn("failed to read config file, using defaults", "path", configFilename, "error", err)
 		return
