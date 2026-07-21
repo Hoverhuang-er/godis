@@ -1,0 +1,14 @@
+Godis {{ .Chart.AppVersion }} has been deployed.
+
+{{- if eq .Values.mode "standalone" }}
+  Standalone mode: 1 replica
+{{- else }}
+  Cluster mode: {{ .Values.cluster.replicas }} replicas
+  Raft port: {{ .Values.cluster.raftPort }}
+{{- end }}
+
+To connect:
+
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "godis.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl port-forward --namespace {{ .Release.Namespace }} $POD_NAME {{ .Values.service.port }}:{{ .Values.config.port }}
+  redis-cli -p {{ .Values.service.port }}

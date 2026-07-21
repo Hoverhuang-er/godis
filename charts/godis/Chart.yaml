@@ -1,0 +1,18 @@
+apiVersion: v2
+name: godis
+description: A Redis-compatible in-memory database server (Godis)
+type: application
+version: 1.3.1
+appVersion: "1.3.1"
+keywords:
+  - redis
+  - database
+  - cache
+  - in-memory
+home: https://github.com/Hoverhuang-er/godis
+sources:
+  - https://github.com/Hoverhuang-er/godis
+maintainers:
+  - name: Hoverhuang-er
+    email: shuohaohuang@gmail.com
+icon: https://raw.githubusercontent.com/Hoverhuang-er/godis/main/docs/logo.png

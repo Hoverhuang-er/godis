@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "godis.fullname" . }}-config
+  labels: {{ include "godis.labels" . | nindent 4 }}
+data:
+  standalone.toml: |
+    config_mode = "{{ .Values.mode }}"
+
+    [server]
+    bind = "{{ .Values.config.bind }}"
+    port = {{ .Values.config.port }}
+    maxclients = {{ .Values.config.maxclients }}
+    databases = {{ .Values.config.databases }}
+    {{- if .Values.config.requirepass }}
+    requirepass = "{{ .Values.config.requirepass }}"
+    {{- end }}
+    {{- if .Values.config.masterauth }}
+    masterauth = "{{ .Values.config.masterauth }}"
+    {{- end }}
+
+    [aof]
+    appendonly = {{ .Values.config.appendonly }}
+    appendfsync = "{{ .Values.config.appendfsync }}"
+    aof_use_rdb_preamble = true
+
+    [slowlog]
+    log_slower_than = 10000
+    max_len = 128
+
+    {{- if eq .Values.mode "cluster" }}
+    [cluster]
+    enable = true
+    as_seed = true
+    raft_listen_address = "0.0.0.0:{{ .Values.cluster.raftPort }}"
+    {{- end }}
+
+    {{- if .Values.config.extraConfig }}
+    {{ .Values.config.extraConfig | nindent 4 }}
+    {{- end }}

@@ -1,0 +1,85 @@
+# -- Number of godis replicas (cluster mode only; standalone uses 1)
+replicaCount: 1
+
+image:
+  # -- Godis image repository
+  repository: ghcr.io/Hoverhuang-er/godis
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag (default: Chart appVersion)
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Godis run mode: "standalone" or "cluster"
+mode: standalone
+
+config:
+  # -- Redis service bind address
+  bind: "0.0.0.0"
+  # -- Redis service port
+  port: 6399
+  # -- Enable AOF persistence
+  appendonly: false
+  # -- AOF fsync policy: "always", "everysec", or "no"
+  appendfsync: "everysec"
+  # -- Max client connections
+  maxclients: 128
+  # -- Number of databases
+  databases: 16
+  # -- Requirepass for authentication
+  requirepass: ""
+  # -- Masterauth for replication
+  masterauth: ""
+  # -- Additional raw TOML config lines appended to standalone.toml
+  extraConfig: ""
+
+cluster:
+  # -- Cluster mode replicas (ignored when mode=standalone)
+  replicas: 3
+  # -- Raft consensus listen port
+  raftPort: 16666
+
+service:
+  # -- Kubernetes service type
+  type: ClusterIP
+  # -- Service port
+  port: 6399
+  # -- Cluster IP (leave empty for auto-assigned)
+  clusterIP: ""
+  # -- LoadBalancer IP (service.type must be LoadBalancer)
+  loadBalancerIP: ""
+  # -- Annotations for the service
+  annotations: {}
+
+persistence:
+  # -- Enable persistent volume for AOF/RDB data
+  enabled: false
+  # -- Storage class name (leave empty for default)
+  storageClass: ""
+  # -- Persistent volume size
+  size: 8Gi
+  # -- Access mode
+  accessMode: ReadWriteOnce
+
+resources:
+  # -- Resource limits and requests
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000

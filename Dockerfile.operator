@@ -1,0 +1,22 @@
+ARG GO_VERSION=1.26
+
+FROM golang:${GO_VERSION}-alpine AS builder
+RUN apk add --no-cache git
+WORKDIR /build
+
+COPY go.mod go.sum ./
+COPY patches/ ./patches/
+RUN GOEXPERIMENT=jsonv2 go mod download
+
+COPY . .
+ARG TARGETOS TARGETARCH
+RUN GOEXPERIMENT=jsonv2 CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -ldflags="-s -w" -o operator ./cmd/operator/
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /
+
+COPY --from=builder /build/operator /usr/local/bin/operator
+
+ENTRYPOINT ["operator"]

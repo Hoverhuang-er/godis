@@ -75,9 +75,8 @@ jobs:
         with:
           name: godis_${{ matrix.os }}_${{ matrix.arch }}
           path: godis_${{ matrix.os }}_${{ matrix.arch }}.zip
-
-  docker:
-    name: Build and Push Docker Image
+  godis-image:
+    name: Build and Push Godis Docker Image
     needs: build
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -105,7 +104,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
-      - name: Build and push
+      - name: Build and push godis image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -115,6 +114,64 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  operator-image:
+    name: Build and Push Operator Docker Image
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push operator image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.operator
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}/operator:${{ github.ref_name }},ghcr.io/${{ github.repository }}/operator:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  helm-chart:
+    name: Publish Helm Chart
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Helm
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
+
+      - name: Package Helm Chart
+        run: |
+          helm package charts/godis --destination .tmp/
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Helm Chart to GHCR
+        run: |
+          helm push .tmp/godis-*.tgz oci://ghcr.io/${{ github.repository }}/charts
 
   release:
     name: Create Release
