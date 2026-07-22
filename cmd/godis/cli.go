@@ -24,7 +24,7 @@ type cliFlags struct {
 }
 
 func parseCLIFlags() cliFlags {
-	f := cliFlags{host: "127.0.0.1", port: 6399}
+	f := cliFlags{host: "127.0.0.1", port: 6379}
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		switch args[i] {

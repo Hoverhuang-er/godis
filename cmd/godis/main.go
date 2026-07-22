@@ -31,7 +31,7 @@ var banner = `
 
 var defaultProperties = &config.ServerProperties{
 	Bind:           "0.0.0.0",
-	Port:           6399,
+	Port:           6379,
 	AppendOnly:     false,
 	AppendFilename: "",
 	MaxClients:     1000,
@@ -39,7 +39,7 @@ var defaultProperties = &config.ServerProperties{
 
 	// HTTP API defaults
 	HttpApiEnabled: true,
-	HttpApiPort:    63809,
+	HttpApiPort:    63790,
 	HttpApiHost:    "127.0.0.1",
 }
 
@@ -151,10 +151,10 @@ func startWebDashboard() {
 		}
 	}
 
-	dashAddr := ":63808"
+	dashAddr := ":63800"
 	dash := web.NewDashboard(dashAddr, c)
 	dash.Start()
 
-	slog.Info("godis web dashboard at http://localhost:63808")
+	slog.Info("godis web dashboard at http://localhost:63800")
 	select {}
 }

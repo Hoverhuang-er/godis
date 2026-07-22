@@ -99,7 +99,7 @@ var EachTimeServerInfo *ServerInfo
 func init() {
 	Properties = &ServerProperties{
 		Bind:                 "0.0.0.0",
-		Port:                 6399,
+		Port:                 6379,
 		MaxClients:           128,
 		Databases:            16,
 		AppendFsync:          "everysec",

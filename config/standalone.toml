@@ -14,7 +14,7 @@ config_mode = "standalone"
 bind = "0.0.0.0"
 
 # Port to listen on
-port = 6399
+port = 6379
 
 # Working directory for AOF, RDB, and cluster data
 # dir = "/opt/godis"
@@ -58,7 +58,7 @@ dbfilename = "test.rdb"
 # announce_host = "5.5.5.5"
 
 # Slave announcement port
-# slave_announce_port = 6399
+# slave_announce_port = 6379
 
 # Replication timeout in seconds
 # repl_timeout = 60
@@ -98,4 +98,4 @@ enabled = true
 host = "127.0.0.1"
 
 # HTTP API listen port
-port = 63809
+port = 63790

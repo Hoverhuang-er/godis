@@ -2,7 +2,7 @@ services:
   godis:
     image: ghcr.io/Hoverhuang-er/godis:latest
     ports:
-      - "6399:6399"
+      - "6379:6379"
     volumes:
       - godis-data:/data
       - ./config/standalone.toml:/etc/godis/standalone.toml:ro

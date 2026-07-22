@@ -11,7 +11,7 @@ config_mode = "standalone"
 
 [server]
 bind = "0.0.0.0"
-port = 6399
+port = 6379
 maxclients = 128
 databases = 16
 
@@ -25,7 +25,7 @@ appendfsync = "everysec"
 	if Properties.Bind != "0.0.0.0" {
 		t.Errorf("TOML parse bind failed: got %s", Properties.Bind)
 	}
-	if Properties.Port != 6399 {
+	if Properties.Port != 6379 {
 		t.Errorf("TOML parse port failed: got %d", Properties.Port)
 	}
 	if !Properties.AppendOnly {

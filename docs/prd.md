@@ -214,7 +214,7 @@ Godis is a Redis-compatible in-memory data structure server written in Go. It pr
 
 | Feature | Details |
 |---------|---------|
-| **URL** | `http://localhost:63808` |
+| **URL** | `http://localhost:63800` |
 | **Pages** | Dashboard (/) with live stats |
 | **API Endpoints** | `/api/query` (POST, read-only queries), `/api/monitor` (SSE), `/api/stats` (JSON) |
 | **Auth** | Via `--auth` flag when starting with `--web` |
@@ -266,7 +266,7 @@ Godis is a Redis-compatible in-memory data structure server written in Go. It pr
 | Section | Parameter | Type | Default | Description |
 |---------|-----------|------|---------|-------------|
 | **server** | bind | string | 0.0.0.0 | Bind address |
-| | port | int | 6399 | Listen port |
+| | port | int | 6379 | Listen port |
 | | dir | string | /opt/godis | Working directory |
 | | maxclients | int | 128 | Max client connections |
 | | databases | int | 16 | Number of databases |
@@ -473,7 +473,7 @@ func authMiddleware(next http.HandlerFunc, engine *TokenEngine) http.HandlerFunc
 # Enable the HTTP API server
 api_enabled = false
 # HTTP API listen port
-api_port = 63809
+api_port = 63790
 # Default token expiration in hours (default: 72)
 api_token_expiry = 72
 ```

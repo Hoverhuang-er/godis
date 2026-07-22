@@ -29,5 +29,5 @@ COPY --from=builder /build/godis /usr/local/bin/godis
 COPY config/standalone.toml /etc/godis/standalone.toml
 
 ENV CONFIG=/etc/godis/standalone.toml
-EXPOSE 6399
+EXPOSE 6379
 ENTRYPOINT ["godis"]

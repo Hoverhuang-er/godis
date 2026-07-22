@@ -2,7 +2,7 @@ config_mode = "standalone"
 
 [server]
 bind = "0.0.0.0"
-port = 6399
+port = 6379
 # dir = "/opt/godis"
 maxclients = 128
 databases = 16
@@ -21,7 +21,7 @@ dbfilename = "test.rdb"
 
 [replication]
 # announce_host = "5.5.5.5"
-# slave_announce_port = 6399
+# slave_announce_port = 6379
 # repl_timeout = 60
 
 [slowlog]
@@ -47,4 +47,4 @@ relay_parallel = true
 [http_api]
 enabled = true
 host = "127.0.0.1"
-port = 63809
+port = 63790

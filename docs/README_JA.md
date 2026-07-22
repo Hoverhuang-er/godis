@@ -49,7 +49,7 @@
 
 ![](https://i.loli.net/2021/05/15/oQM1yZ6pWm3AIEj.png)
 
-redis-cli または他の Redis クライアントを使用して godis サーバーに接続できます。デフォルトでは 0.0.0.0:6399 でリッスンします。
+redis-cli または他の Redis クライアントを使用して godis サーバーに接続できます。デフォルトでは 0.0.0.0:6379 でリッスンします。
 
 ![](https://i.loli.net/2021/05/15/7WquEgonzY62sZI.png)
 
@@ -71,7 +71,7 @@ CONFIG=node2.conf ./godis-darwin &
 クラスター内の任意のノードに接続して、全データにアクセスできます:
 
 ```cmd
-redis-cli -p 6399
+redis-cli -p 6379
 ```
 
 クラスター設定の詳細については [example.conf](./example.conf) を参照してください。
@@ -119,7 +119,7 @@ import (
 
 func main() {
 	client, err := rueidis.NewClient(rueidis.ClientOption{
-		InitAddress: []string{"localhost:6399"},
+		InitAddress: []string{"localhost:6379"},
 	})
 	if err != nil {
 		log.Fatal(err)

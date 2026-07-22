@@ -20,7 +20,7 @@ config:
   # -- Redis service bind address
   bind: "0.0.0.0"
   # -- Redis service port
-  port: 6399
+  port: 6379
   # -- Enable AOF persistence
   appendonly: false
   # -- AOF fsync policy: "always", "everysec", or "no"
@@ -46,7 +46,7 @@ service:
   # -- Kubernetes service type
   type: ClusterIP
   # -- Service port
-  port: 6399
+  port: 6379
   # -- Cluster IP (leave empty for auto-assigned)
   clusterIP: ""
   # -- LoadBalancer IP (service.type must be LoadBalancer)

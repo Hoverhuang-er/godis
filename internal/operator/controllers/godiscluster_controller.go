@@ -116,7 +116,7 @@ func (r *GodisClusterReconciler) reconcileConfigMap(ctx context.Context, cluster
 
 	port := cluster.Spec.Port
 	if port == 0 {
-		port = 6399
+		port = 6379
 	}
 
 	configContent := fmt.Sprintf(`config_mode = "%s"
@@ -176,7 +176,7 @@ raft_listen_address = "0.0.0.0:%d"
 func (r *GodisClusterReconciler) reconcileService(ctx context.Context, cluster *godisv1.GodisCluster) (*corev1.Service, error) {
 	port := cluster.Spec.Port
 	if port == 0 {
-		port = 6399
+		port = 6379
 	}
 
 	svc := &corev1.Service{
@@ -246,7 +246,7 @@ func (r *GodisClusterReconciler) reconcileStatefulSet(ctx context.Context, clust
 
 	port := cluster.Spec.Port
 	if port == 0 {
-		port = 6399
+		port = 6379
 	}
 
 	labels := map[string]string{

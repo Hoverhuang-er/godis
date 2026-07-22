@@ -49,7 +49,7 @@ Voit ladata suoritettavan ohjelman taman repositorion julkaisusivulta (tukee Lin
 
 ![](https://i.loli.net/2021/05/15/oQM1yZ6pWm3AIEj.png)
 
-Voit kayttaa redis-cli:a tai muuta Redis-asiakasta yhdistaaksesi godis-palvelimeen, joka kuuntelee oletuksena osoitetta 0.0.0.0:6399.
+Voit kayttaa redis-cli:a tai muuta Redis-asiakasta yhdistaaksesi godis-palvelimeen, joka kuuntelee oletuksena osoitetta 0.0.0.0:6379.
 
 ![](https://i.loli.net/2021/05/15/7WquEgonzY62sZI.png)
 
@@ -71,7 +71,7 @@ CONFIG=node2.conf ./godis-darwin &
 Yhdista mihin tahansa klusterin solmuun paastyaksesi käsiksi kaikkiin klusterin tietoihin:
 
 ```cmd
-redis-cli -p 6399
+redis-cli -p 6379
 ```
 
 Klusterikonfiguraatiota varten katso [example.conf](./example.conf).
@@ -119,7 +119,7 @@ import (
 
 func main() {
 	client, err := rueidis.NewClient(rueidis.ClientOption{
-		InitAddress: []string{"localhost:6399"},
+		InitAddress: []string{"localhost:6379"},
 	})
 	if err != nil {
 		log.Fatal(err)

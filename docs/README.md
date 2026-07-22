@@ -77,7 +77,7 @@ $env:CONFIG="config\standalone.toml"
 git clone https://github.com/Hoverhuang-er/godis.git
 cd godis
 docker compose up -d
-redis-cli -p 6399 PING
+redis-cli -p 6379 PING
 ```
 
 Minimal `docker-compose.yml`:
@@ -87,7 +87,7 @@ services:
   godis:
     image: ghcr.io/Hoverhuang-er/godis:latest
     ports:
-      - "6399:6399"
+      - "6379:6379"
     volumes:
       - godis-data:/data
       - ./config/standalone.toml:/etc/godis/standalone.toml:ro
@@ -103,7 +103,7 @@ volumes:
 
 ```bash
 docker run -d --name godis \
-  -p 6399:6399 \
+  -p 6379:6379 \
   -v godis-data:/data \
   ghcr.io/Hoverhuang-er/godis:latest
 ```
@@ -118,7 +118,7 @@ CONFIG=config/cluster.toml ./godis &
 Connect to any node to access the full dataset:
 
 ```bash
-redis-cli -p 6399
+redis-cli -p 6379
 ```
 
 ### Prometheus Monitoring
@@ -186,7 +186,7 @@ metadata:
   name: my-godis
 spec:
   mode: standalone
-  port: 6399
+  port: 6379
   resources:
     requests:
       cpu: 500m
@@ -239,7 +239,7 @@ import (
 
 func main() {
 	client, err := rueidis.NewClient(rueidis.ClientOption{
-		InitAddress: []string{"localhost:6399"},
+		InitAddress: []string{"localhost:6379"},
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -295,7 +295,7 @@ import (
 
 func main() {
 	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6399",
+		Addr: "localhost:6379",
 	})
 	defer rdb.Close()
 
@@ -341,7 +341,7 @@ import (
 
 func main() {
 	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6399",
+		Addr: "localhost:6379",
 	})
 	defer rdb.Close()
 
@@ -383,7 +383,7 @@ func main() {
 ```python
 import redis
 
-r = redis.Redis(host="localhost", port=6399, decode_responses=True)
+r = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
 # SET / GET
 r.set("foo", "bar")
@@ -406,7 +406,7 @@ import redis
 import threading
 import time
 
-r = redis.Redis(host="localhost", port=6399, decode_responses=True)
+r = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
 
 def subscriber():
@@ -428,14 +428,14 @@ t.join(timeout=2)
 
 ## HTTP API
 
-Godis includes a built-in HTTP API server for programmatic access from any language. The API is **enabled by default** on port `63809` (configurable via `[http_api]` config section).
+Godis includes a built-in HTTP API server for programmatic access from any language. The API is **enabled by default** on port `63790` (configurable via `[http_api]` config section).
 
 ### Authentication
 
 Authenticate with the godis `requirepass` to receive a rotating token:
 
 ```bash
-curl -X POST http://127.0.0.1:63809/api/auth \
+curl -X POST http://127.0.0.1:63790/api/auth \
   -H 'Content-Type: application/json' \
   -d '{"password":"yourpassword","expired":72}'
 ```
@@ -461,32 +461,32 @@ All Redis commands are accessible via `GET /api/commands`:
 
 ```bash
 # String: SET
-curl 'http://127.0.0.1:63809/api/commands?type=set&key=foo&value=bar' \
+curl 'http://127.0.0.1:63790/api/commands?type=set&key=foo&value=bar' \
   -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
 # {"success":true,"result":"OK","raw":"+OK\r\n"}
 
 # String: GET
-curl 'http://127.0.0.1:63809/api/commands?type=get&key=foo' \
+curl 'http://127.0.0.1:63790/api/commands?type=get&key=foo' \
   -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
 # {"success":true,"result":"bar","raw":"$3\r\nbar\r\n"}
 
 # Hash
-curl 'http://127.0.0.1:63809/api/commands?type=hset&key=user:1&field=name&value=Alice' \
+curl 'http://127.0.0.1:63790/api/commands?type=hset&key=user:1&field=name&value=Alice' \
   -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
 
-curl 'http://127.0.0.1:63809/api/commands?type=hget&key=user:1&field=name' \
+curl 'http://127.0.0.1:63790/api/commands?type=hget&key=user:1&field=name' \
   -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
 
 # List
-curl 'http://127.0.0.1:63809/api/commands?type=lpush&key=mylist&value=a' \
+curl 'http://127.0.0.1:63790/api/commands?type=lpush&key=mylist&value=a' \
   -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
 
 # Sorted Set
-curl 'http://127.0.0.1:63809/api/commands?type=zadd&key=leaderboard&score=100&member=player1&args=200%20player2' \
+curl 'http://127.0.0.1:63790/api/commands?type=zadd&key=leaderboard&score=100&member=player1&args=200%20player2' \
   -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
 
 # Server
-curl 'http://127.0.0.1:63809/api/commands?type=ping' \
+curl 'http://127.0.0.1:63790/api/commands?type=ping' \
   -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
 # {"success":true,"result":"PONG","raw":"+PONG\r\n"}
 ```
@@ -515,7 +515,7 @@ enabled = true
 host = "127.0.0.1"
 
 # Listen port
-port = 63809
+port = 63790
 ```
 
 The HTTP API server auto-starts inside the main godis process. To disable, set `enabled = false` in the `[http_api]` section.

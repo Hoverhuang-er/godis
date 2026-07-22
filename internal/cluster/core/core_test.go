@@ -27,7 +27,7 @@ func TestClusterBootstrap(t *testing.T) {
 	connections := NewInMemConnectionFactory()
 	leaderCfg := &Config{
 		RaftConfig: raft.RaftConfig{
-			RedisAdvertiseAddr: "127.0.0.1:6399",
+			RedisAdvertiseAddr: "127.0.0.1:6379",
 			RaftListenAddr:     "127.0.0.1:16666",
 			RaftAdvertiseAddr:  "127.0.0.1:16666",
 			Dir:                leaderDir,
@@ -152,7 +152,7 @@ func TestFailover(t *testing.T) {
 	connections := NewInMemConnectionFactory()
 	leaderCfg := &Config{
 		RaftConfig: raft.RaftConfig{
-			RedisAdvertiseAddr: "127.0.0.1:6399",
+			RedisAdvertiseAddr: "127.0.0.1:6379",
 			RaftListenAddr:     "127.0.0.1:26666",
 			RaftAdvertiseAddr:  "127.0.0.1:26666",
 			Dir:                leaderDir,

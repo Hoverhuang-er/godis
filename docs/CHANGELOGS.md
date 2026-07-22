@@ -14,7 +14,7 @@
 - feat(release): build and push multi-arch Docker image to GHCR
 - feat: Prometheus metrics with hot/big key monitoring (redis_exporter compatible)
 - feat: `--cli` with `--monitor` sub-flag: split-screen TUI (3 monitoring panels + redis-cli)
-- feat: `--web` dashboard on :63808 with `-u`, `-h`, `-p`, `-a` flags
+- feat: `--web` dashboard on :63800 with `-u`, `-h`, `-p`, `-a` flags
 - feat: `-u` redis:// URL support in CLI flags
 - feat: Entra ID (Azure AD) token-based authentication with JWKS validation
 

@@ -60,7 +60,7 @@ CONFIG=node2.conf ./godis-darwin &
 集群模式对客户端是透明的，只要连接上集群中任意一个节点就可以访问集群中所有数据：
 
 ```bash
-redis-cli -p 6399
+redis-cli -p 6379
 ```
 
 更多配置请查阅 [example.conf](./example.conf)
@@ -108,7 +108,7 @@ import (
 
 func main() {
 	client, err := rueidis.NewClient(rueidis.ClientOption{
-		InitAddress: []string{"localhost:6399"},
+		InitAddress: []string{"localhost:6379"},
 	})
 	if err != nil {
 		log.Fatal(err)

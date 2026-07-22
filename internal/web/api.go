@@ -28,8 +28,8 @@ type ApiServer struct {
 
 // NewApiServer creates a new API server.
 // The Redis client connection is established asynchronously when Start() is called.
-// addr: HTTP listen address (e.g. ":63809")
-// redisAddr: godis TCP address (e.g. "127.0.0.1:6399")
+// addr: HTTP listen address (e.g. ":63790")
+// redisAddr: godis TCP address (e.g. "127.0.0.1:6379")
 // redisPassword: godis requirepass (may be empty)
 func NewApiServer(addr, redisAddr, redisPassword string) *ApiServer {
 	te := NewTokenEngine(redisPassword)

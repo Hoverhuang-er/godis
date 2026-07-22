@@ -15,7 +15,7 @@ config_mode = "cluster"
 bind = "0.0.0.0"
 
 # Port to listen on
-port = 7369
+port = 6379
 
 # Working directory for AOF, RDB, Raft metadata
 dir = "/opt/godis/node1"
@@ -65,7 +65,7 @@ enable = true
 # as_seed = true
 
 # Address of any node in the cluster to join (use Redis service address, NOT Raft)
-# seed = "127.0.0.1:6399"
+# seed = "127.0.0.1:6379"
 
 # Raft consensus listen address
 # raft_listen_address = "0.0.0.0:16666"
@@ -74,7 +74,7 @@ enable = true
 # raft_advertise_address = ""
 
 # If joining as a replica of an existing node, set master's Redis address
-# master_in_cluster = "127.0.0.1:6399"
+# master_in_cluster = "127.0.0.1:6379"
 
 [http_api]
 # Enable the HTTP API server for programmatic access
@@ -84,4 +84,4 @@ enabled = true
 host = "127.0.0.1"
 
 # HTTP API listen port
-port = 63809
+port = 63790
