@@ -1,4 +1,4 @@
-# Godis v1.3.1
+# Godis v1.3.2
 
 ![license](https://img.shields.io/github/license/Hoverhuang-er/godis)
 [![Build Status](https://github.com/Hoverhuang-er/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/Hoverhuang-er/godis/actions?query=branch%3Amaster)

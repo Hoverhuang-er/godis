@@ -1,6 +1,6 @@
 # Godis Product Requirements Document
 
-> **Version:** 1.3.1  
+> **Version:** 1.3.2
 > **Last Updated:** 2026-07-22  
 > **Repository:** [github.com/Hoverhuang-er/godis](https://github.com/Hoverhuang-er/godis)
 

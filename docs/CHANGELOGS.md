@@ -1,5 +1,12 @@
 # Godis Changelog
 
+## v1.3.2 (2026-07-22)
+
+### Features
+- feat: HTTP API server with token-based auth (POST /api/auth) and Redis command execution (GET /api/commands)
+- feat: X-HEADER-AUTHTOKEN rotating token auth (128-char uppercase, configurable expiry, default 72h)
+- feat: comprehensive PRD document (docs/prd.md)
+
 ## v1.3.1 (2026-07-22)
 
 ### Features

@@ -1,4 +1,4 @@
-# Godis v1.3.1
+# Godis v1.3.2
 
 ![license](https://img.shields.io/github/license/Hoverhuang-er/godis)
 [![Build Status](https://github.com/Hoverhuang-er/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/Hoverhuang-er/godis/actions?query=branch%3Amaster)
@@ -51,7 +51,7 @@ If you could read Chinese, you can find more details in [My Blog](https://www.cn
 
 ```bash
 # Download the binary from GitHub Releases
-curl -LO https://github.com/Hoverhuang-er/godis/releases/download/v1.3.1/godis_linux_amd64.zip
+curl -LO https://github.com/Hoverhuang-er/godis/releases/download/v1.3.2/godis_linux_amd64.zip
 unzip godis_linux_amd64.zip
 
 # Run with minimal config
@@ -154,15 +154,14 @@ For production deployments, use the Helm chart:
 
 ```bash
 # Add repository and install
-helm pull oci://ghcr.io/Hoverhuang-er/godis/charts/godis --version 1.3.1
-helm install godis ./godis-1.3.1.tgz
+helm pull oci://ghcr.io/Hoverhuang-er/godis/charts/godis --version 1.3.2
+helm install godis ./godis-1.3.2.tgz
 
 # Or install directly
-helm install godis oci://ghcr.io/Hoverhuang-er/godis/charts/godis --version 1.3.1
+helm install godis oci://ghcr.io/Hoverhuang-er/godis/charts/godis --version 1.3.2
 
 # Cluster mode (3 nodes)
-helm install godis-cluster oci://ghcr.io/Hoverhuang-er/godis/charts/godis --version 1.3.1 \
-  --set mode=cluster --set replicaCount=3
+helm install godis-cluster oci://ghcr.io/Hoverhuang-er/godis/charts/godis --version 1.3.2 \
 ```
 
 See [charts/godis/values.yaml](https://github.com/Hoverhuang-er/godis/blob/main/charts/godis/values.yaml) for all configuration options.
@@ -176,7 +175,7 @@ The Godis Operator manages GodisCluster custom resources. Deploy with:
 kubectl apply -f https://raw.githubusercontent.com/Hoverhuang-er/godis/main/config/crd/godisclusters.yaml
 
 # Deploy operator (default: 3 nodes, 0.5 CPU / 1Gi memory per node)
-kubectl create deployment godis-operator --image=ghcr.io/Hoverhuang-er/godis/operator:1.3.1
+kubectl create deployment godis-operator --image=ghcr.io/Hoverhuang-er/godis/operator:1.3.2
 
 # Create a Godis cluster (standalone)
 kubectl apply -f - <<EOF
