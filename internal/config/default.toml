@@ -48,3 +48,7 @@ relay_parallel = true
 enabled = true
 host = "127.0.0.1"
 port = 63790
+
+[web]
+# Web dashboard listen port
+port = 63800

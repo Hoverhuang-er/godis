@@ -67,6 +67,8 @@ type ServerProperties struct {
 	HttpApiEnabled bool   `cfg:"http-api-enabled" toml:"http_api_enabled"`
 	HttpApiPort    int    `cfg:"http-api-port" toml:"http_api_port"`
 	HttpApiHost    string `cfg:"http-api-host" toml:"http_api_host"`
+	// Web Dashboard settings
+	WebPort int `cfg:"web-port" toml:"web_port"`
 }
 
 var configFilePath string
@@ -196,6 +198,7 @@ func populateFromViper(v *viper.Viper) {
 	Properties.PrometheusEnabled = getBool(v, "monitoring.prometheus_enabled", Properties.PrometheusEnabled)
 	Properties.PrometheusPort = getInt(v, "monitoring.prometheus_port", Properties.PrometheusPort)
 
+	Properties.WebPort = getInt(v, "web.port", Properties.WebPort)
 	Properties.HttpApiEnabled = getBool(v, "http_api.enabled", Properties.HttpApiEnabled)
 	Properties.HttpApiPort = getInt(v, "http_api.port", Properties.HttpApiPort)
 	Properties.HttpApiHost = getStr(v, "http_api.host", Properties.HttpApiHost)

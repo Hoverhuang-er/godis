@@ -6,6 +6,8 @@
 - feat: HTTP API server with token-based auth (POST /api/auth) and Redis command execution (GET /api/commands)
 - feat: X-HEADER-AUTHTOKEN rotating token auth (128-char uppercase, configurable expiry, default 72h)
 - feat: comprehensive PRD document (docs/prd.md)
+- feat: configurable web dashboard port (WebPort, default 63800, [web] section in TOML)
+- feat: port overview in README (TCP 6379, API 63790, Web 63800, Metrics 9121)
 
 ## v1.3.1 (2026-07-22)
 

@@ -41,6 +41,8 @@ var defaultProperties = &config.ServerProperties{
 	HttpApiEnabled: true,
 	HttpApiPort:    63790,
 	HttpApiHost:    "127.0.0.1",
+	// Web Dashboard defaults
+	WebPort:        63800,
 }
 
 func fileExists(filename string) bool {
@@ -151,10 +153,10 @@ func startWebDashboard() {
 		}
 	}
 
-	dashAddr := ":63800"
+	dashAddr := net.JoinHostPort("", strconv.Itoa(config.Properties.WebPort))
 	dash := web.NewDashboard(dashAddr, c)
 	dash.Start()
 
-	slog.Info("godis web dashboard at http://localhost:63800")
+	slog.Info("godis web dashboard at http://localhost:" + strconv.Itoa(config.Properties.WebPort))
 	select {}
 }

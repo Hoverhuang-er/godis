@@ -42,6 +42,7 @@ Key Features:
 - Cluster metadata management based on Raft. Support dynamic expansion, rebalancing and failover.
 - `MSET`, `MSETNX`, `DEL`, `Rename`, `RenameNX` command is supported and atomically executed in cluster mode, allow over multi node.
 - HTTP API server with token-based auth (POST /api/auth, GET /api/commands, X-HEADER-AUTHTOKEN)
+- Web dashboard for browsing and monitoring (launch with `--web` flag, port 63800)
 - `MULTI` Commands Transaction is supported within slot in cluster mode
 
 If you could read Chinese, you can find more details in [My Blog](https://www.cnblogs.com/Finley/category/1598973.html).
@@ -146,6 +147,15 @@ To disable metrics, set `prometheus_enabled = false` in the `[monitoring]` secti
 prometheus_enabled = true
 prometheus_port = 9121
 ```
+
+### Port Overview
+
+| Service | Default Port | Config Section | Config Key |
+|---------|-------------|----------------|------------|
+| Redis TCP | `6379` | `[server]` | `port` |
+| HTTP API | `63790` | `[http_api]` | `port` |
+| Web Dashboard | `63800` | `[web]` | `port` |
+| Prometheus Metrics | `9121` | `[monitoring]` | `prometheus_port` |
 
 ## Kubernetes Deployment
 
@@ -519,6 +529,42 @@ port = 63790
 ```
 
 The HTTP API server auto-starts inside the main godis process. To disable, set `enabled = false` in the `[http_api]` section.
+
+## Web Dashboard
+
+Godis includes a built-in web dashboard for browsing and monitoring Redis data. Launch it using the `--web` flag. The dashboard connects to a running godis instance via the standard Redis TCP port.
+
+```bash
+# Start the web dashboard (connects to localhost:6379 by default)
+./godis --web
+
+# Connect to a remote godis instance
+./godis --web -h 192.168.1.100 -p 6379 -a yourpassword
+```
+
+The dashboard runs on port **63800** by default (configurable via `[web]` config section):
+
+```toml
+[web]
+# Web dashboard listen port
+port = 63800
+```
+
+Open [http://localhost:63800](http://localhost:63800) in your browser to access:
+- **Dashboard** — real-time ops/sec, active connections, total commands
+- **Query** — execute any Redis command interactively
+- **Hot Keys** — most frequently accessed keys
+- **Big Keys** — keys with the largest memory/size footprint
+- **Monitor** — live command stream
+
+### CLI flags for `--web`
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-h` | `127.0.0.1` | Godis host to connect to |
+| `-p` | `6379` | Godis TCP port |
+| `-a` | (none) | Auth password (requirepass) |
+| `-u` | (none) | Redis URL (`redis://user:pass@host:port`) |
 
 ## Supported Commands
 
