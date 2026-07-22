@@ -41,6 +41,7 @@ Key Features:
 - Server-side Cluster which is transparent to client. You can connect to any node in the cluster to access all data in the cluster.
 - Cluster metadata management based on Raft. Support dynamic expansion, rebalancing and failover.
 - `MSET`, `MSETNX`, `DEL`, `Rename`, `RenameNX` command is supported and atomically executed in cluster mode, allow over multi node.
+- HTTP API server with token-based auth (POST /api/auth, GET /api/commands, X-HEADER-AUTHTOKEN)
 - `MULTI` Commands Transaction is supported within slot in cluster mode
 
 If you could read Chinese, you can find more details in [My Blog](https://www.cnblogs.com/Finley/category/1598973.html).
@@ -274,6 +275,250 @@ func main() {
 	}
 }
 ```
+
+## Go-Redis Client Example
+
+[go-redis](https://github.com/redis/go-redis) is the official Redis client for Go. Godis is compatible with `go-redis v9` targeting Redis 8.8.0.
+
+### GET / SET
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/redis/go-redis/v9"
+)
+
+func main() {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6399",
+	})
+	defer rdb.Close()
+
+	ctx := context.Background()
+
+	// SET / GET
+	err := rdb.Set(ctx, "foo", "bar", 0).Err()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	val, err := rdb.Get(ctx, "foo").Result()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("GET foo = %s\n", val)
+
+	// Work with RedisJSON
+	err = rdb.JSONSet(ctx, "user:1", "$", `{"name":"Alice","age":30}`).Err()
+	if err != nil {
+		log.Printf("JSON note: %v (RedisJSON module required)", err)
+	}
+
+	userJSON, err := rdb.JSONGet(ctx, "user:1", "$.name").Result()
+	if err == nil {
+		fmt.Printf("JSON user:1 $.name = %s\n", userJSON)
+	}
+}
+```
+
+### Pub/Sub
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/redis/go-redis/v9"
+)
+
+func main() {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6399",
+	})
+	defer rdb.Close()
+
+	ctx := context.Background()
+
+	// Subscribe
+	pubsub := rdb.Subscribe(ctx, "mychannel")
+	defer pubsub.Close()
+
+	// Wait for subscription confirmation
+	_, err := pubsub.Receive(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Publish in a separate goroutine
+	go func() {
+		err := rdb.Publish(ctx, "mychannel", "hello from godis").Err()
+		if err != nil {
+			log.Printf("publish error: %v", err)
+		}
+	}()
+
+	// Receive message
+	msg, err := pubsub.ReceiveMessage(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Received: %s = %s\n", msg.Channel, msg.Payload)
+}
+```
+
+## redis-py Client Example
+
+[redis-py](https://github.com/redis/redis-py) is the official Redis client for Python. Godis is compatible with `redis-py >= 5.0`.
+
+### GET / SET
+
+```python
+import redis
+
+r = redis.Redis(host="localhost", port=6399, decode_responses=True)
+
+# SET / GET
+r.set("foo", "bar")
+val = r.get("foo")
+print(f"GET foo = {val}")  # bar
+
+# RedisJSON
+try:
+    r.json().set("user:1", "$", {"name": "Alice", "age": 30})
+    name = r.json().get("user:1", "$.name")
+    print(f"JSON user:1 $.name = {name}")
+except Exception as e:
+    print(f"JSON note: {e} (RedisJSON module required)")
+```
+
+### Pub/Sub
+
+```python
+import redis
+import threading
+import time
+
+r = redis.Redis(host="localhost", port=6399, decode_responses=True)
+
+
+def subscriber():
+    pubsub = r.pubsub()
+    pubsub.subscribe("mychannel")
+    for msg in pubsub.listen():
+        if msg["type"] == "message":
+            print(f'Received: {msg["channel"]} = {msg["data"]}')
+            break
+
+
+t = threading.Thread(target=subscriber, daemon=True)
+t.start()
+
+time.sleep(0.1)  # allow subscription to register
+r.publish("mychannel", "hello from godis")
+t.join(timeout=2)
+```
+
+## HTTP API
+
+Godis includes a built-in HTTP API server for programmatic access from any language. The API is **enabled by default** on port `63809` (configurable via `[http_api]` config section).
+
+### Authentication
+
+Authenticate with the godis `requirepass` to receive a rotating token:
+
+```bash
+curl -X POST http://127.0.0.1:63809/api/auth \
+  -H 'Content-Type: application/json' \
+  -d '{"password":"yourpassword","expired":72}'
+```
+
+Response:
+```json
+{
+  "token": "XVQLRNEKBSMNGTZHYFWACPJODX...",
+  "expires_at": "2026-07-25T12:00:00Z",
+  "permanent": false
+}
+```
+
+**Token parameters:**
+- `password` (required): The godis `requirepass` configured in `[security]`
+- `expired` (optional): Token TTL in hours. Default `72`. Set to `0` for a permanent token
+
+The token is a 128-character random uppercase ASCII string. Pass it in the `X-HEADER-AUTHTOKEN` header on subsequent requests.
+
+### Execute Commands
+
+All Redis commands are accessible via `GET /api/commands`:
+
+```bash
+# String: SET
+curl 'http://127.0.0.1:63809/api/commands?type=set&key=foo&value=bar' \
+  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
+# {"success":true,"result":"OK","raw":"+OK\r\n"}
+
+# String: GET
+curl 'http://127.0.0.1:63809/api/commands?type=get&key=foo' \
+  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
+# {"success":true,"result":"bar","raw":"$3\r\nbar\r\n"}
+
+# Hash
+curl 'http://127.0.0.1:63809/api/commands?type=hset&key=user:1&field=name&value=Alice' \
+  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
+
+curl 'http://127.0.0.1:63809/api/commands?type=hget&key=user:1&field=name' \
+  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
+
+# List
+curl 'http://127.0.0.1:63809/api/commands?type=lpush&key=mylist&value=a' \
+  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
+
+# Sorted Set
+curl 'http://127.0.0.1:63809/api/commands?type=zadd&key=leaderboard&score=100&member=player1&args=200%20player2' \
+  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
+
+# Server
+curl 'http://127.0.0.1:63809/api/commands?type=ping' \
+  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
+# {"success":true,"result":"PONG","raw":"+PONG\r\n"}
+```
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `type` | string | Yes | Redis command name (set, get, hset, zadd, etc.) |
+| `key` | string | Conditional | Key name |
+| `value` | string | No | Value for write operations |
+| `field` | string | No | Hash field name |
+| `member` | string | No | Set / SortedSet member |
+| `score` | number | No | SortedSet score |
+| `args` | string | No | Additional space-separated arguments |
+| `db` | number | No | Database index (default: 0) |
+
+### Configuration
+
+```toml
+[http_api]
+# Enable the HTTP API server
+enabled = true
+
+# Bind address (use 0.0.0.0 for external access)
+host = "127.0.0.1"
+
+# Listen port
+port = 63809
+```
+
+The HTTP API server auto-starts inside the main godis process. To disable, set `enabled = false` in the `[http_api]` section.
 
 ## Supported Commands
 
