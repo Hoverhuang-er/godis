@@ -43,3 +43,8 @@ relay_parallel = true
 # Azure Entra ID authentication (optional)
 # entra_tenant_id = ""
 # entra_app_id = ""
+
+[http_api]
+enabled = true
+host = "127.0.0.1"
+port = 63809

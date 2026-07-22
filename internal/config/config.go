@@ -62,6 +62,11 @@ type ServerProperties struct {
 	ClusterRelayParallel bool   `cfg:"cluster-relay-parallel" toml:"cluster_relay_parallel"`
 	AzureEntraTenantID   string `cfg:"azure-entra-tenant-id" toml:"azure_entra_tenant_id"`
 	AzureEntraAppID      string `cfg:"azure-entra-app-id" toml:"azure_entra_app_id"`
+
+	// HTTP API settings
+	HttpApiEnabled bool   `cfg:"http-api-enabled" toml:"http_api_enabled"`
+	HttpApiPort    int    `cfg:"http-api-port" toml:"http_api_port"`
+	HttpApiHost    string `cfg:"http-api-host" toml:"http_api_host"`
 }
 
 var configFilePath string
@@ -190,6 +195,10 @@ func populateFromViper(v *viper.Viper) {
 
 	Properties.PrometheusEnabled = getBool(v, "monitoring.prometheus_enabled", Properties.PrometheusEnabled)
 	Properties.PrometheusPort = getInt(v, "monitoring.prometheus_port", Properties.PrometheusPort)
+
+	Properties.HttpApiEnabled = getBool(v, "http_api.enabled", Properties.HttpApiEnabled)
+	Properties.HttpApiPort = getInt(v, "http_api.port", Properties.HttpApiPort)
+	Properties.HttpApiHost = getStr(v, "http_api.host", Properties.HttpApiHost)
 }
 
 func getStr(v *viper.Viper, key, def string) string {

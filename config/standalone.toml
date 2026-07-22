@@ -89,3 +89,13 @@ prometheus_enabled = true
 
 # Prometheus metrics HTTP server port
 prometheus_port = 9121
+
+[http_api]
+# Enable the HTTP API server for programmatic access
+enabled = true
+
+# HTTP API bind host (use 0.0.0.0 to allow external access)
+host = "127.0.0.1"
+
+# HTTP API listen port
+port = 63809

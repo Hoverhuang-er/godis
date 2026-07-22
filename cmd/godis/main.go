@@ -36,6 +36,11 @@ var defaultProperties = &config.ServerProperties{
 	AppendFilename: "",
 	MaxClients:     1000,
 	RunID:          utils.RandString(40),
+
+	// HTTP API defaults
+	HttpApiEnabled: true,
+	HttpApiPort:    63809,
+	HttpApiHost:    "127.0.0.1",
 }
 
 func fileExists(filename string) bool {
@@ -97,9 +102,27 @@ func main() {
 			db = database.NewStandaloneServer()
 		}
 		server := gnet.NewGnetServer(db)
+
+		// Start HTTP API server if enabled (connects to local godis with retry)
+		if config.Properties.HttpApiEnabled {
+			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))
+			redisAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
+			apiSrv := web.NewApiServer(apiAddr, redisAddr, config.Properties.RequirePass)
+			apiSrv.Start()
+		}
+
 		err = server.Run(listenAddr)
 	} else {
 		handler := stdserver.MakeHandler()
+
+		// Start HTTP API server if enabled (connects to local godis with retry)
+		if config.Properties.HttpApiEnabled {
+			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))
+			redisAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
+			apiSrv := web.NewApiServer(apiAddr, redisAddr, config.Properties.RequirePass)
+			apiSrv.Start()
+		}
+
 		err = stdserver.Serve(listenAddr, handler)
 	}
 	if err != nil {
