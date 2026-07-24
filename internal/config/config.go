@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"os/user"
 	"strconv"
 	"time"
 
@@ -67,6 +68,8 @@ type ServerProperties struct {
 	HttpApiEnabled bool   `cfg:"http-api-enabled" toml:"http_api_enabled"`
 	HttpApiPort    int    `cfg:"http-api-port" toml:"http_api_port"`
 	HttpApiHost    string `cfg:"http-api-host" toml:"http_api_host"`
+	// Data directory for bolt persistence (~/.godis), survives upgrades
+	DataDir string `cfg:"data-dir" toml:"data_dir"`
 	// Web Dashboard settings
 	WebPort int `cfg:"web-port" toml:"web_port"`
 }
@@ -114,6 +117,10 @@ func init() {
 		ClusterRelayParallel: true,
 		AzureEntraTenantID:   "",
 		AzureEntraAppID:      "",
+		HttpApiEnabled:       true,
+		HttpApiHost:          "127.0.0.1",
+		HttpApiPort:          63790,
+		WebPort:              63800,
 	}
 	EachTimeServerInfo = &ServerInfo{}
 }
@@ -202,6 +209,13 @@ func populateFromViper(v *viper.Viper) {
 	Properties.HttpApiEnabled = getBool(v, "http_api.enabled", Properties.HttpApiEnabled)
 	Properties.HttpApiPort = getInt(v, "http_api.port", Properties.HttpApiPort)
 	Properties.HttpApiHost = getStr(v, "http_api.host", Properties.HttpApiHost)
+	Properties.DataDir = getStr(v, "data.dir", Properties.DataDir)
+	if Properties.DataDir == "" {
+		if usr, err := user.Current(); err == nil {
+			Properties.DataDir = filepath.Join(usr.HomeDir, ".godis")
+		}
+	}
+	_ = os.MkdirAll(Properties.DataDir, 0o755)
 }
 
 func getStr(v *viper.Viper, key, def string) string {

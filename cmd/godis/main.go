@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"strconv"
 
 	"github.com/Hoverhuang-er/godis/internal/cluster"
@@ -99,7 +101,9 @@ func main() {
 	}
 	listenAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
 
+	var shutdownDB idatabase.DB
 	var err error
+
 	if config.Properties.UseGnet {
 		var db idatabase.DB
 		if config.Properties.ClusterEnable {
@@ -107,9 +111,9 @@ func main() {
 		} else {
 			db = database.NewStandaloneServer()
 		}
-		server := gnet.NewGnetServer(db)
+		shutdownDB = db
+		srv := gnet.NewGnetServer(db)
 
-		// Start HTTP API server if enabled (connects to local godis with retry)
 		if config.Properties.HttpApiEnabled {
 			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))
 			redisAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
@@ -117,11 +121,10 @@ func main() {
 			apiSrv.Start()
 		}
 
-		err = server.Run(listenAddr)
+		go func() { err = srv.Run(listenAddr) }()
 	} else {
 		handler := stdserver.MakeHandler()
 
-		// Start HTTP API server if enabled (connects to local godis with retry)
 		if config.Properties.HttpApiEnabled {
 			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))
 			redisAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
@@ -129,11 +132,21 @@ func main() {
 			apiSrv.Start()
 		}
 
-		err = stdserver.Serve(listenAddr, handler)
+		go func() { err = stdserver.Serve(listenAddr, handler) }()
 	}
-	if err != nil {
-		slog.Error(fmt.Sprintf("start server failed: %v", err))
+
+	// Wait for SIGINT/SIGTERM for graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+	slog.Info("received shutdown signal, gracefully shutting down...")
+
+	if shutdownDB != nil {
+		if closer, ok := shutdownDB.(interface{ Close() }); ok {
+			closer.Close()
+		}
 	}
+	slog.Info("godis shutdown complete")
 }
 func startWebDashboard() {
 	flags := parseCLIFlags()
