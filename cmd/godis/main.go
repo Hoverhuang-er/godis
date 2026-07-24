@@ -103,6 +103,7 @@ func main() {
 	listenAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
 
 	var shutdownDB idatabase.DB
+	stopCh := make(chan struct{})
 
 	if config.Properties.UseGnet {
 		var db idatabase.DB
@@ -132,7 +133,7 @@ func main() {
 			apiSrv.Start()
 		}
 
-		go func() { _ = stdserver.Serve(listenAddr, handler) }()
+		go func() { _ = stdserver.Serve(listenAddr, handler, stopCh) }()
 	}
 
 	// Wait for SIGINT/SIGTERM for graceful shutdown
@@ -141,16 +142,22 @@ func main() {
 	sig := <-sigCh
 	slog.Info("received shutdown signal, gracefully shutting down...", "signal", sig)
 
+	// Step 1: stop accepting new connections, drain in-flight requests
+	slog.Info("step 1/3: stopping tcp listener and draining connections...")
+	close(stopCh)
+	time.Sleep(500 * time.Millisecond) // brief pause for listener to close
+
+	// Step 2: flush data to bolt
 	if shutdownDB != nil {
-		slog.Info("step 1/2: closing server and flushing data to ~/.godis ...")
+		slog.Info("step 2/3: flushing data to ~/.godis ...")
 		start := time.Now()
 		if closer, ok := shutdownDB.(interface{ Close() }); ok {
 			closer.Close()
 		}
-		slog.Info("step 1/2: data flush complete",
+		slog.Info("step 2/3: data flush complete",
 			"elapsed", time.Since(start).Round(time.Millisecond).String())
 	}
-	slog.Info("step 2/2: godis shutdown complete")
+	slog.Info("step 3/3: godis shutdown complete")
 }
 func startWebDashboard() {
 	flags := parseCLIFlags()

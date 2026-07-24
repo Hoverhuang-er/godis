@@ -4,12 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
-	"os/signal"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/Hoverhuang-er/godis/internal/interface/tcp"
@@ -62,46 +59,31 @@ func GetPoolFree() int {
 	return handlerPool.Free()
 }
 
-// ListenAndServeWithSignal binds port and handle requests, blocking until receive stop signal
-func ListenAndServeWithSignal(cfg *Config, handler tcp.Handler) error {
-	closeChan := make(chan struct{})
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)
-	go func() {
-		sig := <-sigCh
-		switch sig {
-		case syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
-			closeChan <- struct{}{}
-		}
-	}()
+// ListenAndServeWithSignal binds port, serves until stopCh is closed.
+// The caller is responsible for signal handling and graceful shutdown.
+func ListenAndServeWithSignal(cfg *Config, handler tcp.Handler, stopCh <-chan struct{}) error {
 	listener, err := net.Listen("tcp", cfg.Address)
 	if err != nil {
 		return err
 	}
 	slog.Info(fmt.Sprintf("bind: %s, start listening...", cfg.Address))
-	ListenAndServe(listener, handler, closeChan)
+
+	// Close listener when stopCh fires
+	go func() {
+		<-stopCh
+		slog.Info("shutting down tcp listener...")
+		_ = listener.Close()
+	}()
+
+	ListenAndServe(listener, handler)
 	return nil
 }
 
 // ListenAndServe binds port and handle requests, blocking until close
-func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan struct{}) {
+func ListenAndServe(listener net.Listener, handler tcp.Handler) {
 	if handlerPool == nil {
 		InitPool()
 	}
-
-	errCh := make(chan error, 1)
-	defer close(errCh)
-	go func() {
-		select {
-		case <-closeChan:
-			slog.Info("get exit signal")
-		case er := <-errCh:
-			slog.Info(fmt.Sprintf("accept error: %s", er.Error()))
-		}
-		slog.Info("shutting down...")
-		_ = listener.Close()
-		_ = handler.Close()
-	}()
 
 	ctx := context.Background()
 	var waitDone sync.WaitGroup
@@ -114,7 +96,7 @@ func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 				time.Sleep(5 * time.Millisecond)
 				continue
 			}
-			errCh <- err
+			slog.Info("listener closed, stopping accept loop")
 			break
 		}
 
@@ -129,7 +111,6 @@ func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 			handler.Handle(ctx, conn)
 		})
 		if err != nil {
-			// Pool full or closed — fallback to raw goroutine
 			slog.Warn("tcp pool submit failed, fallback to raw goroutine", "error", err)
 			go func() {
 				defer func() {
@@ -140,7 +121,11 @@ func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 			}()
 		}
 	}
+
+	// Wait for all in-flight handlers to complete, then close the handler
 	waitDone.Wait()
+	slog.Info("all connections drained, closing handler...")
+	_ = handler.Close()
 }
 
 // extractIP extracts the IP address from a "host:port" string.

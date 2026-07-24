@@ -47,10 +47,10 @@ func MakeHandler() *Handler {
 	}
 }
 
-func Serve(addr string, handler *Handler) error {
+func Serve(addr string, handler *Handler, stopCh <-chan struct{}) error {
 	return tcp.ListenAndServeWithSignal(&tcp.Config{
 		Address: addr,
-	}, handler)
+	}, handler, stopCh)
 }
 
 func (h *Handler) closeClient(client *connection.Connection) {
