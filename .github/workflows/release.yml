@@ -149,11 +149,11 @@ jobs:
           MAJOR=$(echo "$MAJOR_MINOR" | cut -d. -f1)
 
           for t in "$TAG" "$MAJOR_MINOR" "$MAJOR" "latest"; do
-            docker manifest create "$REPO:$t" \
-              --amend "$REPO:$TAG-linux-amd64" \
-              --amend "$REPO:$TAG-linux-arm64" \
-              --amend "$REPO:$TAG-linux-riscv64"
-            docker manifest push "$REPO:$t"
+            docker buildx imagetools create \
+              -t "$REPO:$t" \
+              "$REPO:$TAG-linux-amd64" \
+              "$REPO:$TAG-linux-arm64" \
+              "$REPO:$TAG-linux-riscv64"
           done
 
   # ---- Docker: operator image (per-arch matrix) ----
@@ -212,14 +212,14 @@ jobs:
         run: |
           REPO="ghcr.io/$REPO_LC/operator"
           TAG="${{ github.ref_name }}"
-          docker manifest create "$REPO:$TAG" \
-            --amend "$REPO:$TAG-linux-amd64" \
-            --amend "$REPO:$TAG-linux-arm64"
-          docker manifest push "$REPO:$TAG"
-          docker manifest create "$REPO:latest" \
-            --amend "$REPO:$TAG-linux-amd64" \
-            --amend "$REPO:$TAG-linux-arm64"
-          docker manifest push "$REPO:latest"
+          docker buildx imagetools create \
+            -t "$REPO:$TAG" \
+            "$REPO:$TAG-linux-amd64" \
+            "$REPO:$TAG-linux-arm64"
+          docker buildx imagetools create \
+            -t "$REPO:latest" \
+            "$REPO:$TAG-linux-amd64" \
+            "$REPO:$TAG-linux-arm64"
 
   # ---- Helm chart ----
   helm-chart:

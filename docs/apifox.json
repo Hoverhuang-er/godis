@@ -1,0 +1,403 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Godis HTTP API",
+    "description": "Godis HTTP API provides token-based authentication and Redis command execution over HTTP. It acts as a bridge between HTTP clients and the underlying godis Redis-compatible in-memory database.\n\n## How It Works\n\nThe API server connects to a local godis instance via the Redis RESP protocol (same as redis-cli). Each `/api/commands` request is translated into a Redis command and executed against the local godis server.\n\n- Password equals the `requirepass` configured in godis\n- All Redis commands are supported\n- The `raw` field in responses shows the exact RESP protocol output",
+    "version": "1.3.3"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:63790",
+      "description": "Local godis HTTP API server (default port)"
+    }
+  ],
+  "paths": {
+    "/api/auth": {
+      "post": {
+        "summary": "Authenticate and get an API token",
+        "description": "Exchange the godis requirepass for a bearer token. The password is validated against the godis server's configured requirepass.",
+        "operationId": "authenticate",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["password"],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "description": "Godis requirepass (same as redis-cli AUTH)."
+                  },
+                  "expired": {
+                    "type": "integer",
+                    "description": "Token lifetime in hours. 0 = permanent. Default 72.",
+                    "minimum": 0,
+                    "default": 72
+                  }
+                }
+              },
+              "example": {
+                "password": "your-redis-password",
+                "expired": 72
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token issued successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "128-char bearer token"
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "permanent": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "token": "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGH",
+                  "expires_at": "2026-07-27T05:58:19Z",
+                  "permanent": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string" }
+                  }
+                },
+                "example": { "error": "invalid JSON body" }
+              }
+            }
+          },
+          "401": {
+            "description": "Wrong password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string" }
+                  }
+                },
+                "example": { "error": "invalid password" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commands": {
+      "get": {
+        "summary": "Execute a Redis command",
+        "description": "Execute any Redis command via HTTP query parameters. Parameters are translated to Redis RESP command and executed against the local godis instance.\n\n**Command mapping:** type=command, key=key, value=value, field=hash-field, member=set/sorted-set-member, score=sorted-set-score, args=extra-space-separated-args, db=database-index",
+        "operationId": "executeCommand",
+        "tags": ["Commands"],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Redis command (lowercase). E.g. set, get, hget, lpush, zadd, json.set, bf.add",
+            "example": "set"
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Redis key",
+            "example": "mykey"
+          },
+          {
+            "name": "value",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Value / secondary argument",
+            "example": "bar"
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Hash field name",
+            "example": "name"
+          },
+          {
+            "name": "member",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Set / SortedSet member",
+            "example": "member1"
+          },
+          {
+            "name": "score",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "SortedSet score",
+            "example": "1.0"
+          },
+          {
+            "name": "args",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Extra space-separated args (NX, EX, CH, etc.)",
+            "example": "NX EX 3600"
+          },
+          {
+            "name": "db",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 0, "maximum": 15 },
+            "description": "Database index (0-15)",
+            "example": 0
+          }
+        ],
+        "security": [{ "AuthTokenHeader": [] }],
+        "responses": {
+          "200": {
+            "description": "Command result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "result": { "type": "string", "nullable": true },
+                    "raw": { "type": "string", "nullable": true },
+                    "error": { "type": "string", "nullable": true }
+                  }
+                },
+                "examples": {
+                  "stringSet": {
+                    "summary": "SET key value",
+                    "value": { "success": true, "result": "OK", "raw": "+OK\r\n" }
+                  },
+                  "stringGet": {
+                    "summary": "GET key",
+                    "value": { "success": true, "result": "bar", "raw": "$3\r\nbar\r\n" }
+                  },
+                  "error": {
+                    "summary": "Redis error",
+                    "value": { "success": false, "error": "WRONGTYPE ...", "raw": "-WRONGTYPE ...\r\n" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing type parameter",
+            "content": {
+              "application/json": {
+                "example": { "success": false, "error": "type parameter is required" }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missingToken": {
+                    "value": { "error": "missing X-HEADER-AUTHTOKEN header" }
+                  },
+                  "invalidToken": {
+                    "value": { "error": "unauthorized - invalid or expired token" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "AuthTokenHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-HEADER-AUTHTOKEN",
+        "description": "Token from POST /api/auth. Send the raw token value (no 'Bearer' prefix). If requirepass is empty, this header is optional."
+      }
+    }
+  },
+  "tags": [
+    { "name": "Authentication", "description": "Token-based API authentication" },
+    { "name": "Commands", "description": "Redis command execution via HTTP" }
+  ],
+  "x-apifox": {
+    "version": "2.0",
+    "environments": [
+      {
+        "name": "Local Godis",
+        "serverUrl": "http://127.0.0.1:63790",
+        "description": "本地 godis 开发环境",
+        "variables": {
+          "base_url": {
+            "value": "http://127.0.0.1:63790",
+            "description": "Godis HTTP API 地址"
+          },
+          "token": {
+            "value": "",
+            "description": "认证 Token — 通过 POST /api/auth 获取"
+          }
+        },
+        "headers": {
+          "X-HEADER-AUTHTOKEN": "{{token}}"
+        }
+      }
+    ],
+    "assertions": {
+      "default": [
+        {
+          "type": "status_code",
+          "value": 200,
+          "comparison": "equals"
+        },
+        {
+          "type": "json_body",
+          "jsonPath": "$.success",
+          "value": "true",
+          "comparison": "equals"
+        }
+      ]
+    },
+    "preRequestScript": "// 如果 token 为空，先调用 /api/auth 获取 token\nif (!pm.environment.get('token')) {\n    pm.sendRequest({\n        url: pm.environment.get('base_url') + '/api/auth',\n        method: 'POST',\n        header: { 'Content-Type': 'application/json' },\n        body: {\n            mode: 'raw',\n            raw: JSON.stringify({\n                password: pm.environment.get('password') || 'your-redis-password',\n                expired: 72\n            })\n        }\n    }, function (err, response) {\n        if (!err) {\n            var json = response.json();\n            pm.environment.set('token', json.token);\n        }\n    });\n}",
+    "examples": [
+      {
+        "name": "01 - 获取 Token",
+        "endpoint": "POST /api/auth",
+        "parameters": {
+          "body": {
+            "contentType": "application/json",
+            "data": {
+              "password": "your-redis-password",
+              "expired": 72
+            }
+          }
+        }
+      },
+      {
+        "name": "02 - SET 字符串",
+        "endpoint": "GET /api/commands",
+        "parameters": {
+          "query": {
+            "type": "set",
+            "key": "hello",
+            "value": "world"
+          }
+        }
+      },
+      {
+        "name": "03 - GET 字符串",
+        "endpoint": "GET /api/commands",
+        "parameters": {
+          "query": {
+            "type": "get",
+            "key": "hello"
+          }
+        }
+      },
+      {
+        "name": "04 - HSET / HGET 哈希",
+        "endpoint": "GET /api/commands",
+        "parameters": {
+          "query": {
+            "type": "hset",
+            "key": "user:1",
+            "field": "name",
+            "value": "Alice"
+          }
+        }
+      },
+      {
+        "name": "05 - LPUSH / LRANGE 列表",
+        "endpoint": "GET /api/commands",
+        "parameters": {
+          "query": {
+            "type": "lpush",
+            "key": "tasks",
+            "value": "task1"
+          }
+        }
+      },
+      {
+        "name": "06 - ZADD / ZRANGE 有序集合",
+        "endpoint": "GET /api/commands",
+        "parameters": {
+          "query": {
+            "type": "zadd",
+            "key": "leaderboard",
+            "score": "100",
+            "member": "player1"
+          }
+        }
+      },
+      {
+        "name": "07 - SADD / SMEMBERS 集合",
+        "endpoint": "GET /api/commands",
+        "parameters": {
+          "query": {
+            "type": "sadd",
+            "key": "tags",
+            "member": "golang"
+          }
+        }
+      },
+      {
+        "name": "08 - 带过期时间的 SET",
+        "endpoint": "GET /api/commands",
+        "parameters": {
+          "query": {
+            "type": "set",
+            "key": "temp",
+            "value": "expires-in-1h",
+            "args": "EX 3600"
+          }
+        }
+      },
+      {
+        "name": "09 - 选择数据库",
+        "endpoint": "GET /api/commands",
+        "parameters": {
+          "query": {
+            "type": "get",
+            "key": "foo",
+            "db": "1"
+          }
+        }
+      },
+      {
+        "name": "10 - JSON 模块命令",
+        "endpoint": "GET /api/commands",
+        "parameters": {
+          "query": {
+            "type": "json.set",
+            "key": "doc",
+            "value": "$",
+            "args": "'{\"name\":\"test\"}'"
+          }
+        }
+      }
+    ]
+  }
+}

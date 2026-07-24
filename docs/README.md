@@ -179,6 +179,194 @@ prometheus_enabled = true
 prometheus_port = 9121
 ```
 
+### HTTP API Server
+
+Godis provides a lightweight HTTP API server (default port `63790`) for programmatic access. It acts as a bridge between HTTP clients and the godis Redis-compatible engine — each API call is translated into a Redis RESP command and executed against the local godis instance.
+
+#### Configuration
+
+Enable the HTTP API in `standalone.toml`:
+
+```toml
+[http_api]
+enabled = true
+host = "127.0.0.1"   # use 0.0.0.0 for external access
+port = 63790
+```
+
+#### API Endpoints
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `POST` | `/api/auth` | Authenticate and get a bearer token | No |
+| `GET`  | `/api/commands` | Execute a Redis command | Yes (unless `requirepass` is empty) |
+
+> **Auth bypass**: If `requirepass` is not set in godis config, the `/api/commands` endpoint allows all requests without token authentication.
+
+#### 1. Authentication — `POST /api/auth`
+
+Exchange the godis `requirepass` for a 128-character bearer token. Password validation is done against the godis server's configured `requirepass`.
+
+**Request:**
+
+```json
+{
+  "password": "your-redis-password",
+  "expired": 72
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `password` | string | **Required.** Godis `requirepass` (same password used with `redis-cli AUTH`) |
+| `expired` | integer | Token lifetime in hours. `0` = permanent (never expires). Default: `72` |
+
+**Response (`200`):**
+
+```json
+{
+  "token": "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ...",
+  "expires_at": "2026-07-27T05:58:19Z",
+  "permanent": false
+}
+```
+
+**cURL example:**
+
+```bash
+curl -X POST http://127.0.0.1:63790/api/auth \
+  -H "Content-Type: application/json" \
+  -d '{"password":"your-redis-password","expired":72}'
+```
+
+#### 2. Execute Commands — `GET /api/commands`
+
+Execute any Redis command via query parameters. Parameters are mapped to Redis command arguments and forwarded to the local godis instance.
+
+**Auth:** Pass the token in the `X-HEADER-AUTHTOKEN` header (no "Bearer" prefix).
+
+**Query parameters:**
+
+| Parameter | Required | Redis Role | Example |
+|-----------|----------|-----------|---------|
+| `type` | ✅ | Command name (lowercase) | `set`, `hget`, `lpush`, `zadd`, `json.set` |
+| `key` | varies | Redis key | `mykey`, `user:100` |
+| `value` | varies | Value / secondary argument | `bar`, `100` |
+| `field` | varies | Hash field name | `name`, `email` |
+| `member` | varies | Set / SortedSet member | `member1`, `user:50` |
+| `score` | varies | SortedSet score | `1.0`, `100` |
+| `args` | no | Extra space-separated arguments | `NX EX 3600` |
+| `db` | no | Database index (`0`–`15`) | `0` |
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "result": "bar",
+  "raw": "$3\r\nbar\r\n"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | boolean | `true` = command succeeded, `false` = Redis returned an error |
+| `result` | string (nullable) | Human-readable Redis reply (OK, value, numbered list, error msg) |
+| `raw` | string (nullable) | Raw RESP protocol bytes (same as `redis-cli` would receive) |
+| `error` | string (nullable) | Redis error message (present when `success` is `false`) |
+
+**Examples:**
+
+```bash
+# String: SET and GET
+curl "http://127.0.0.1:63790/api/commands?type=set&key=hello&value=world" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+# → {"success":true,"result":"OK","raw":"+OK\r\n"}
+
+curl "http://127.0.0.1:63790/api/commands?type=get&key=hello" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+# → {"success":true,"result":"world","raw":"$5\r\nworld\r\n"}
+
+# Hash: HSET and HGET
+curl "http://127.0.0.1:63790/api/commands?type=hset&key=user:1&field=name&value=Alice" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+curl "http://127.0.0.1:63790/api/commands?type=hget&key=user:1&field=name" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+# List: LPUSH and LRANGE
+curl "http://127.0.0.1:63790/api/commands?type=lpush&key=tasks&value=task1" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+curl "http://127.0.0.1:63790/api/commands?type=lrange&key=tasks&value=0&args=-1" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+# Sorted Set: ZADD and ZRANGE
+curl "http://127.0.0.1:63790/api/commands?type=zadd&key=leaderboard&score=100&member=player1" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+curl "http://127.0.0.1:63790/api/commands?type=zrange&key=leaderboard&value=0&args=-1" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+# Set: SADD and SMEMBERS
+curl "http://127.0.0.1:63790/api/commands?type=sadd&key=tags&member=golang" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+curl "http://127.0.0.1:63790/api/commands?type=smembers&key=tags" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+# With expiry: SET NX EX
+curl "http://127.0.0.1:63790/api/commands?type=set&key=cache&value=1&args=NX%20EX%203600" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+# Server commands
+curl "http://127.0.0.1:63790/api/commands?type=ping" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+curl "http://127.0.0.1:63790/api/commands?type=dbsize" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+# Module commands (pass-through)
+curl "http://127.0.0.1:63790/api/commands?type=json.set&key=doc&value=%24&args='{\"name\":\"test\"}'" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+
+curl "http://127.0.0.1:63790/api/commands?type=bf.add&key=bloom&member=item1" \
+  -H "X-HEADER-AUTHTOKEN: <token>"
+```
+
+#### OpenAPI / Apifox
+
+OpenAPI v3 specification and Apifox project export are available in the `docs/` directory:
+
+| File | Description |
+|------|-------------|
+| [`docs/openapi.yaml`](docs/openapi.yaml) | OpenAPI 3.0.3 specification — import into Apifox, Postman, or any OpenAPI-compatible tool |
+| [`docs/apifox.json`](docs/apifox.json) | Apifox project export with pre-configured environment, auth variables, and 10+ example requests |
+
+**Import into Apifox:**
+
+1. Open Apifox → **File** → **Import** → **OpenAPI / Swagger**
+2. Select `docs/openapi.yaml` or `docs/apifox.json`
+3. The environment `Local Godis` is pre-configured with `{{token}}` variable
+4. Run the "01 - 获取 Token" example to auto-fill the token, then execute any command example
+
+#### Supported Commands
+
+The HTTP API supports all Redis commands via the query parameter mapping system:
+
+| Category | Commands |
+|----------|----------|
+| **Strings** | `get`, `set`, `setnx`, `setex`, `psetex`, `append`, `getset`, `getdel`, `incr`, `incrby`, `incrbyfloat`, `decr`, `decrby`, `strlen` |
+| **Hashes** | `hget`, `hset`, `hsetnx`, `hdel`, `hexists`, `hlen`, `hstrlen`, `hkeys`, `hvals`, `hgetall`, `hmget`, `hincrby`, `hincrbyfloat` |
+| **Lists** | `lpush`, `rpush`, `lpushx`, `rpushx`, `lpop`, `rpop`, `llen`, `lrange`, `lindex`, `lrem` |
+| **Sets** | `sadd`, `srem`, `sismember`, `smove`, `spop`, `scard`, `smembers`, `srandmember` |
+| **Sorted Sets** | `zadd`, `zrem`, `zscore`, `zrank`, `zrevrank`, `zcard`, `zcount`, `zrange`, `zrevrange`, `zincrby` |
+| **Keys** | `del`, `exists`, `expire`, `expireat`, `pexpire`, `pexpireat`, `ttl`, `pttl`, `persist`, `type`, `rename`, `renamenx`, `copy` |
+| **Server** | `ping`, `dbsize`, `flushdb`, `flushall`, `save`, `bgsave`, `info`, `select`, `keys`, `config` |
+| **Modules** (passthrough) | `json.set`, `json.get`, `bf.add`, `bf.exists`, `topk.add`, `ts.add`, `ft.search`, and any other Redis module command |
+
+Any unrecognized command type is passed through as-is with positional arguments — this means module commands and future commands work without a server update.
+
 ### Port Overview
 
 | Service | Default Port | Config Section | Config Key |

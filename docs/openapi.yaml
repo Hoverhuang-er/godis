@@ -1,0 +1,445 @@
+openapi: "3.0.3"
+info:
+  title: Godis HTTP API
+  description: |
+    Godis HTTP API provides token-based authentication and Redis command execution
+    over HTTP. It acts as a bridge between HTTP clients and the underlying godis
+    Redis-compatible in-memory database.
+
+    ## How It Works
+
+    The API server connects to a local godis instance via the Redis RESP protocol
+    (same as redis-cli). Each `/api/commands` request is translated into a Redis
+    command and executed against the local godis server. This means:
+
+    - You use the **same password** configured in `requirepass` to authenticate
+    - All Redis commands are supported — strings, hashes, lists, sets, sorted sets,
+      keys, server management, and module commands (RediSearch, RedisJSON, etc.)
+    - The response `raw` field contains the raw RESP protocol reply, identical to
+      what redis-cli would return
+
+    ## Quick Start
+
+    ```bash
+    # 1. Get a token
+    curl -X POST http://127.0.0.1:63790/api/auth \
+      -H "Content-Type: application/json" \
+      -d '{"password":"your-redis-password","expired":72}'
+
+    # 2. Execute a command
+    curl "http://127.0.0.1:63790/api/commands?type=set&key=foo&value=bar" \
+      -H "X-HEADER-AUTHTOKEN: <your-token>"
+
+    # 3. Read data
+    curl "http://127.0.0.1:63790/api/commands?type=get&key=foo" \
+      -H "X-HEADER-AUTHTOKEN: <your-token>"
+    ```
+
+    > **Auth bypass**: If `requirepass` is empty in godis config, the `/api/commands`
+    > endpoint allows all requests without token authentication.
+  version: "1.3.3"
+  contact:
+    name: Hoverhuang-er
+    url: https://github.com/Hoverhuang-er/godis
+
+servers:
+  - url: http://127.0.0.1:63790
+    description: Local godis HTTP API server (default port)
+
+paths:
+  /api/auth:
+    post:
+      summary: Authenticate and get an API token
+      description: |
+        Exchange the godis `requirepass` for a bearer token used to authorize
+        subsequent `/api/commands` requests. The password is validated against
+        the godis server's configured `requirepass`.
+
+        A single password can generate multiple tokens. Tokens can have a limited
+        lifetime (default 72 hours) or be permanent (expired=0).
+      operationId: authenticate
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRequest"
+            example:
+              password: "your-redis-password"
+              expired: 72
+      responses:
+        "200":
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              example:
+                token: "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ..."
+                expires_at: "2026-07-27T05:58:19Z"
+                permanent: false
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "invalid JSON body"
+        "401":
+          description: Invalid password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "invalid password"
+        "405":
+          description: Method not allowed (only POST)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "only POST allowed"
+
+  /api/commands:
+    get:
+      summary: Execute a Redis command
+      description: |
+        Execute any Redis command against the godis server through query parameters.
+        The server translates the parameters into a Redis RESP command, forwards it
+        to the local godis instance, and returns both a parsed result and the raw
+        RESP protocol reply.
+
+        ## How Commands Are Mapped
+
+        Query parameters map to Redis command arguments:
+
+        | Parameter | Redis Role | Example |
+        |-----------|-----------|---------|
+        | `type`    | Command name | `set`, `hget`, `lpush`, `zadd` |
+        | `key`     | Key name | `mykey`, `user:100` |
+        | `value`   | Value / secondary arg | `bar`, `100`, `NX` |
+        | `field`   | Hash field name | `name`, `email` |
+        | `member`  | Set / SortedSet member | `member1`, `user:50` |
+        | `score`   | SortedSet score | `1.0`, `100` |
+        | `args`    | Extra args (space-sep) | `NX EX 3600` |
+        | `db`      | Database index (0-15) | `0`, `1` |
+
+        ## Supported Command Categories
+
+        - **Strings**: `get`, `set`, `setnx`, `setex`, `psetex`, `append`, `getset`,
+          `getdel`, `incr`, `incrby`, `incrbyfloat`, `decr`, `decrby`, `strlen`
+        - **Hashes**: `hget`, `hset`, `hsetnx`, `hdel`, `hexists`, `hlen`,
+          `hstrlen`, `hkeys`, `hvals`, `hgetall`, `hmget`, `hincrby`, `hincrbyfloat`
+        - **Lists**: `lpush`, `rpush`, `lpushx`, `rpushx`, `lpop`, `rpop`, `llen`,
+          `lrange`, `lindex`, `lrem`
+        - **Sets**: `sadd`, `srem`, `sismember`, `smove`, `spop`, `scard`,
+          `smembers`, `srandmember`
+        - **Sorted Sets**: `zadd`, `zrem`, `zscore`, `zrank`, `zrevrank`, `zcard`,
+          `zcount`, `zrange`, `zrevrange`, `zincrby`
+        - **Keys**: `del`, `exists`, `expire`, `expireat`, `pexpire`, `pexpireat`,
+          `ttl`, `pttl`, `persist`, `type`, `rename`, `renamenx`, `copy`
+        - **Server**: `ping`, `dbsize`, `flushdb`, `flushall`, `save`, `bgsave`,
+          `info`, `select`, `keys`, `config`
+        - **Modules** (pass-through): `json.set`, `json.get`, `bf.add`, `topk.add`,
+          `ts.add`, `ft.search`, and any other Redis module command
+      operationId: executeCommand
+      tags:
+        - Commands
+      parameters:
+        - name: type
+          in: query
+          required: true
+          description: |
+            Redis command name (lowercase). For module commands like `JSON.SET`,
+            use lowercase `json.set`.
+          schema:
+            type: string
+            example: set
+        - name: key
+          in: query
+          required: false
+          description: |
+            Redis key name. Required for most commands that operate on a key.
+          schema:
+            type: string
+            example: mykey
+        - name: value
+          in: query
+          required: false
+          description: |
+            Value parameter. Used as the value for SET, score for ZCOUNT,
+            increment for INCRBY, destination key for RENAME, etc.
+          schema:
+            type: string
+            example: bar
+        - name: field
+          in: query
+          required: false
+          description: |
+            Hash field name. Used for hash operations (HGET, HSET, HDEL, etc.).
+          schema:
+            type: string
+            example: name
+        - name: member
+          in: query
+          required: false
+          description: |
+            Set or SortedSet member. Used for SADD/SREM member, ZADD member,
+            ZREM member, SISMEMBER member, etc.
+          schema:
+            type: string
+            example: member1
+        - name: score
+          in: query
+          required: false
+          description: |
+            SortedSet score. Used for ZADD score, ZINCRBY increment.
+          schema:
+            type: string
+            example: "1.0"
+        - name: args
+          in: query
+          required: false
+          description: |
+            Extra arguments as a space-separated string. Used for additional
+            modifiers like `NX`, `EX 3600`, `CH`, etc., or extra hash fields,
+            extra sorted set members, or extra keys.
+          schema:
+            type: string
+            example: NX EX 3600
+        - name: db
+          in: query
+          required: false
+          description: |
+            Database index to execute the command against (0 to `databases-1`).
+            Defaults to 0. Uses the Redis `SELECT` command before execution.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 15
+            example: 0
+      security:
+        - AuthTokenHeader: []
+      responses:
+        "200":
+          description: |
+            Command executed. Check `success` field — `true` means the Redis
+            command succeeded, `false` means Redis returned an error (e.g.
+            WRONGTYPE, syntax error).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResult"
+              examples:
+                stringGet:
+                  summary: GET a string key
+                  value:
+                    success: true
+                    result: "bar"
+                    raw: "$3\r\nbar\r\n"
+                stringSet:
+                  summary: SET a string key
+                  value:
+                    success: true
+                    result: "OK"
+                    raw: "+OK\r\n"
+                commandError:
+                  summary: Redis error (wrong type)
+                  value:
+                    success: false
+                    error: "WRONGTYPE Operation against a key holding the wrong kind of value"
+                    raw: "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n"
+                hashGetAll:
+                  summary: HGETALL
+                  value:
+                    success: true
+                    result: "1) \"name\"\n2) \"Alice\"\n3) \"age\"\n4) \"30\""
+                    raw: "*4\r\n$4\r\nname\r\n$5\r\nAlice\r\n$3\r\nage\r\n$2\r\n30\r\n"
+                integerReply:
+                  summary: Integer reply (INCR, EXISTS, etc.)
+                  value:
+                    success: true
+                    result: "1"
+                    raw: ":1\r\n"
+                nilReply:
+                  summary: Nil reply (key not found)
+                  value:
+                    success: true
+                    result: "(nil)"
+                    raw: "$-1\r\n"
+        "400":
+          description: Missing required type parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResult"
+              example:
+                success: false
+                error: "type parameter is required"
+        "401":
+          description: Missing or invalid auth token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missingToken:
+                  summary: Missing auth header
+                  value:
+                    error: "missing X-HEADER-AUTHTOKEN header"
+                invalidToken:
+                  summary: Invalid or expired token
+                  value:
+                    error: "unauthorized - invalid or expired token"
+        "405":
+          description: Method not allowed (only GET)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResult"
+              example:
+                success: false
+                error: "only GET allowed"
+
+components:
+  schemas:
+    AuthRequest:
+      type: object
+      description: Request body for API authentication.
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          description: |
+            The godis `requirepass` (same password used with `redis-cli AUTH`).
+            Must match the `requirepass` in godis config. Cannot be empty
+            when authentication is configured.
+          example: "your-redis-password"
+        expired:
+          type: integer
+          description: |
+            Token lifetime in hours. `0` means permanent (never expires).
+            Defaults to 72 hours when omitted or negative.
+          minimum: 0
+          default: 72
+          example: 72
+
+    AuthResponse:
+      type: object
+      description: Successful authentication response with bearer token.
+      properties:
+        token:
+          type: string
+          description: |
+            128-character uppercase alphanumeric bearer token. Include this
+            in the `X-HEADER-AUTHTOKEN` header for `/api/commands` requests.
+          example: "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ..."
+        expires_at:
+          type: string
+          format: date-time
+          description: |
+            Token expiration timestamp in RFC 3339 format. Omitted when
+            the token is permanent (`permanent: true`).
+          nullable: true
+          example: "2026-07-27T05:58:19Z"
+        permanent:
+          type: boolean
+          description: |
+            Whether the token is permanent (never expires). When `true`,
+            `expires_at` will be absent.
+          example: false
+
+    CommandResult:
+      type: object
+      description: |
+        Result of executing a Redis command. The `success` field indicates
+        whether Redis returned a positive reply or an error. The `result`
+        field contains a human-readable representation, and `raw` contains
+        the raw RESP protocol output.
+      properties:
+        success:
+          type: boolean
+          description: |
+            `true` if Redis returned a positive reply (OK, integer, bulk string,
+            array, nil). `false` if Redis returned an error reply (e.g.,
+            WRONGTYPE, syntax error, OOM).
+          example: true
+        result:
+          type: string
+          description: |
+            Human-readable representation of the Redis reply:
+            - **Status reply**: the status string (e.g. `OK`)
+            - **Integer reply**: formatted as number (e.g. `1`, `0`)
+            - **Bulk string reply**: the string value (e.g. `bar`)
+            - **Array reply**: numbered list (e.g. `1) "foo"\n2) "bar"`)
+            - **Nil reply**: `(nil)` or `(empty list or set)`
+            - **Error reply**: the error message
+          nullable: true
+          example: "bar"
+        raw:
+          type: string
+          description: |
+            Raw RESP protocol reply as bytes. This is exactly what
+            `redis-cli` would receive over the TCP connection.
+            Useful for debugging or when you need the exact protocol output.
+          nullable: true
+          example: "$3\r\nbar\r\n"
+        error:
+          type: string
+          description: |
+            Error message when `success` is `false`. This is the Redis
+            error string (same as what `redis-cli` would show after
+            "(error) ").
+          nullable: true
+          example: "WRONGTYPE Operation against a key holding the wrong kind of value"
+
+    ErrorResponse:
+      type: object
+      description: Error response for auth failures, bad requests, etc.
+      properties:
+        error:
+          type: string
+          description: Human-readable error description.
+          example: "invalid password"
+
+  securitySchemes:
+    AuthTokenHeader:
+      type: apiKey
+      in: header
+      name: X-HEADER-AUTHTOKEN
+      description: |
+        Bearer token obtained from `POST /api/auth`. Send the 128-character
+        token value directly as the header value (no "Bearer" prefix needed).
+
+        If godis `requirepass` is empty (no password configured), this header
+        is **not required** — all requests are allowed without authentication.
+
+        Example: `X-HEADER-AUTHTOKEN: ABCDEFGHIJKLMNOPQRSTUVWXYZ...`
+
+tags:
+  - name: Authentication
+    description: Token-based authentication for API access.
+  - name: Commands
+    description: Execute Redis commands via HTTP query parameters.
+
+x-apifox:
+  version: "2.0"
+  environments:
+    - name: Local godis
+      serverUrl: http://127.0.0.1:63790
+      description: Default local development environment
+      variables:
+        base_url:
+          value: http://127.0.0.1:63790
+          description: Godis HTTP API base URL
+        token:
+          value: ""
+          description: Auth token — obtain via POST /api/auth
+      headers:
+        X-HEADER-AUTHTOKEN: "{{token}}"
