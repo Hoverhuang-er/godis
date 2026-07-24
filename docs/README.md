@@ -48,6 +48,28 @@ Key Features:
 
 If you could read Chinese, you can find more details in [My Blog](https://www.cnblogs.com/Finley/category/1598973.html).
 
+## Release Policy
+
+Godis follows a **tag-only release model**:
+
+- **Only `main` branch** exists permanently. No `release/*` or `fix/*` branches are kept on the remote.
+- **All releases are tagged.** Push a semver tag (`v1.2.3`) to trigger the [Release workflow](.github/workflows/release.yml), which builds binaries, Docker images, and publishes Helm charts.
+- **Branch protection** is enabled on `main`:
+  - Require pull request review (1 approval)
+  - Required linear history
+  - Enforce admins
+  - No force pushes or deletions
+
+```bash
+# To cut a release:
+git checkout main && git pull
+# ... make changes, commit, push to main via PR ...
+git tag v1.4.0
+git push origin v1.4.0
+```
+
+The Release workflow builds for `linux/amd64`, `linux/arm64`, `linux/riscv64`, `windows/amd64`, `windows/arm64`, `darwin/amd64`, `darwin/arm64`.
+
 ## Quick Start
 
 ### Standalone (Linux / macOS)
