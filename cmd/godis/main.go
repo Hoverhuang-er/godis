@@ -60,6 +60,10 @@ func main() {
 			startWebDashboard()
 			return
 		}
+		if arg == "--migrate" {
+			runMigrate()
+			return
+		}
 	}
 	print(banner)
 	logger.Setup(&logger.Settings{

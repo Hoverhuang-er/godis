@@ -2,6 +2,14 @@
 
 ## v1.3.3-bugfix (2026-07-24)
 
+### Features
+- feat: `--migrate` data migration tool — migrate data from godis to any Redis server
+  - `full` subcommand: TUI with source/dest keys side-by-side, progress bar, scroll support
+  - `inc` subcommand: continuous polling for new keys, auto-migrate on discovery
+  - Supports string, hash, list, set, sorted set data types with TTL preservation
+  - Configurable destination host, port, auth, and database index
+  - TODO: support arbitrary Redis-to-Redis migration (not just local godis)
+
 ### Fixes
 - fix: 修复了213个Bug
 
