@@ -45,6 +45,8 @@ info:
 servers:
   - url: http://127.0.0.1:63790
     description: Local godis HTTP API server (default port)
+  - url: http://127.0.0.1:63800
+    description: Local godis Web Dashboard API server (default port)
 
 paths:
   /api/auth:
@@ -306,6 +308,122 @@ paths:
                 success: false
                 error: "only GET allowed"
 
+  /api/query:
+    post:
+      summary: Execute a read-only Redis command (Dashboard)
+      description: |
+        Execute a read-only Redis command against the connected godis instance.
+        Write commands (SET, DEL, etc.) are rejected for safety. Designed for
+        the web dashboard Query tab.
+
+        **Allowed commands**: GET, MGET, STRLEN, EXISTS, TYPE, TTL, PTTL, KEYS,
+        SCAN, HGET, HGETALL, HMGET, HEXISTS, HLEN, HKEYS, HVALS, HSTRLEN,
+        LRANGE, LINDEX, LLEN, SMEMBERS, SCARD, SISMEMBER, SDIFF, SINTER, SUNION,
+        ZRANGE, ZREVRANGE, ZRANK, ZREVRANK, ZSCORE, ZCARD, ZCOUNT, ZRANGEBYSCORE,
+        XRANGE, XLEN, XREAD, GEODIST, GEOHASH, GEOPOS, INFO, PING, DBSIZE, TIME,
+        FT.SEARCH, FT.INFO, FT._LIST, TS.GET, TS.INFO, TS.RANGE,
+        JSON.GET, JSON.TYPE, JSON.STRLEN, JSON.OBJLEN, JSON.OBJKEYS.
+      operationId: dashboardQuery
+      tags:
+        - Dashboard
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - cmd
+              properties:
+                cmd:
+                  type: string
+                  description: Full Redis command line (e.g. "GET mykey", "HGETALL user:1")
+                  example: "GET mykey"
+      responses:
+        "200":
+          description: Command executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResult"
+              example:
+                success: true
+                result: "\"bar\""
+                error: ""
+        "400":
+          description: Write command rejected or missing cmd parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResult"
+              examples:
+                writeRejected:
+                  summary: Write command rejected
+                  value:
+                    success: false
+                    result: ""
+                    error: "read-only commands only (write not allowed)"
+                missingCmd:
+                  summary: Missing cmd parameter
+                  value:
+                    success: false
+                    result: ""
+                    error: "cmd parameter required"
+
+  /api/monitor:
+    get:
+      summary: Get hot keys and big keys monitoring data (Dashboard)
+      description: |
+        Returns current hot key access counts (top 20) and recently detected
+        big key observations from the dashboard monitoring system.
+      operationId: dashboardMonitor
+      tags:
+        - Dashboard
+      responses:
+        "200":
+          description: Monitoring data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitorData"
+              example:
+                hot_keys:
+                  - key: "user:1001"
+                    count: 1523
+                  - key: "cache:session"
+                    count: 891
+                big_keys:
+                  - key: "logs:2026-07"
+                    db: 0
+                    type: "string"
+                    size: 1
+                    bytes: 5242880
+                db_stats: null
+
+  /api/stats:
+    get:
+      summary: Get server runtime statistics (Dashboard)
+      description: |
+        Returns server runtime statistics including uptime, goroutine count,
+        memory usage, connections, and command throughput.
+      operationId: dashboardStats
+      tags:
+        - Dashboard
+      responses:
+        "200":
+          description: Runtime statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsData"
+              example:
+                uptime: 86400
+                goroutines: 34
+                memory: 16777216
+                connections: 12
+                commands: 150234
+                ops_per_sec: 1523
+
 components:
   schemas:
     AuthRequest:
@@ -408,6 +526,117 @@ components:
           description: Human-readable error description.
           example: "invalid password"
 
+    QueryResult:
+      type: object
+      description: Result of executing a query via the Dashboard API.
+      properties:
+        success:
+          type: boolean
+          description: Whether the command executed successfully.
+          example: true
+        result:
+          type: string
+          description: Human-readable Redis reply.
+          example: "\"bar\""
+        error:
+          type: string
+          description: Error message when command is rejected or fails.
+          example: ""
+
+    MonitorData:
+      type: object
+      description: Dashboard monitoring data including hot keys and big keys.
+      properties:
+        hot_keys:
+          type: array
+          description: Top 20 most frequently accessed keys.
+          items:
+            $ref: "#/components/schemas/HotKeyEntry"
+        big_keys:
+          type: array
+          description: Recently detected large keys.
+          items:
+            $ref: "#/components/schemas/BigKeyEntry"
+        db_stats:
+          type: array
+          nullable: true
+          description: Reserved for future per-database statistics.
+
+    HotKeyEntry:
+      type: object
+      description: A frequently accessed key entry.
+      properties:
+        key:
+          type: string
+          description: Redis key name.
+          example: "user:1001"
+        count:
+          type: integer
+          format: int64
+          description: Number of times this key was accessed.
+          example: 1523
+
+    BigKeyEntry:
+      type: object
+      description: A key with large memory or element footprint.
+      properties:
+        key:
+          type: string
+          description: Redis key name.
+          example: "logs:2026-07"
+        db:
+          type: integer
+          description: Database index where this key resides.
+          example: 0
+        type:
+          type: string
+          description: Data type of the key (string, list, hash, set, zset).
+          example: "string"
+        size:
+          type: integer
+          format: int64
+          description: Number of elements in the key.
+          example: 1
+        bytes:
+          type: integer
+          format: int64
+          description: Approximate memory usage in bytes.
+          example: 5242880
+
+    StatsData:
+      type: object
+      description: Server runtime statistics.
+      properties:
+        uptime:
+          type: integer
+          format: int64
+          description: Server uptime in seconds.
+          example: 86400
+        goroutines:
+          type: integer
+          description: Number of active goroutines.
+          example: 34
+        memory:
+          type: integer
+          format: int64
+          description: Allocated heap memory in bytes.
+          example: 16777216
+        connections:
+          type: integer
+          format: int64
+          description: Active client connections.
+          example: 12
+        commands:
+          type: integer
+          format: int64
+          description: Total commands processed since start.
+          example: 150234
+        ops_per_sec:
+          type: integer
+          format: int64
+          description: Commands per second (rolling average).
+          example: 1523
+
   securitySchemes:
     AuthTokenHeader:
       type: apiKey
@@ -427,6 +656,8 @@ tags:
     description: Token-based authentication for API access.
   - name: Commands
     description: Execute Redis commands via HTTP query parameters.
+  - name: Dashboard
+    description: Web dashboard API — query, monitor, and stats endpoints.
 
 x-apifox:
   version: "2.0"
@@ -443,3 +674,10 @@ x-apifox:
           description: Auth token — obtain via POST /api/auth
       headers:
         X-HEADER-AUTHTOKEN: "{{token}}"
+    - name: Dashboard
+      serverUrl: http://127.0.0.1:63800
+      description: Web Dashboard API environment
+      variables:
+        base_url:
+          value: http://127.0.0.1:63800
+          description: Godis Dashboard API base URL
