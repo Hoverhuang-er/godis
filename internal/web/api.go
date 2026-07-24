@@ -48,7 +48,7 @@ func NewApiServer(addr, redisAddr, redisPassword string) *ApiServer {
 
 	s.httpServer = &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: corsMiddleware(mux),
 	}
 
 	return s
