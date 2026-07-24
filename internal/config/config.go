@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -67,6 +68,9 @@ type ServerProperties struct {
 	HttpApiEnabled bool   `cfg:"http-api-enabled" toml:"http_api_enabled"`
 	HttpApiPort    int    `cfg:"http-api-port" toml:"http_api_port"`
 	HttpApiHost    string `cfg:"http-api-host" toml:"http_api_host"`
+	// Security: rename-command support for Monero mining defense
+	// Key = command name (uppercase), Value = new name (empty = disabled)
+	RenameCommands map[string]string `cfg:"rename-command" toml:"rename_command"`
 	// Web Dashboard settings
 	WebPort int `cfg:"web-port" toml:"web_port"`
 }
@@ -172,6 +176,30 @@ func populateFromViper(v *viper.Viper) {
 	Properties.AofUseRdbPreamble = getBool(v, "aof.aof_use_rdb_preamble", Properties.AofUseRdbPreamble)
 	Properties.RDBFilename = getStr(v, "aof.dbfilename", Properties.RDBFilename)
 
+	// Anti-Monero-mining: reject crontab-related paths in AOF/RDB filenames.
+	// Attackers often set dbfilename to crontab paths to achieve RCE.
+	blockedPaths := []string{"/var/spool/cron", "/etc/cron", "/tmp/", "crontab"}
+	for _, bp := range blockedPaths {
+		lowerFilename := strings.ToLower(Properties.AppendFilename)
+		lowerRDB := strings.ToLower(Properties.RDBFilename)
+		if containsPath(lowerFilename, bp) || containsPath(lowerRDB, bp) {
+			slog.Error("anti-mining: blocked crontab-related path in AOF/RDB filename",
+				"appendfilename", Properties.AppendFilename,
+				"dbfilename", Properties.RDBFilename,
+				"blocked", bp)
+			Properties.AppendFilename = "appendonly.aof"
+			Properties.RDBFilename = "test.rdb"
+			break
+		}
+	}
+
+	// Parse rename-command map from [security.rename_command]
+	if rc := v.GetStringMapString("security.rename_command"); len(rc) > 0 {
+		Properties.RenameCommands = make(map[string]string)
+		for k, v := range rc {
+			Properties.RenameCommands[strings.ToUpper(k)] = v
+		}
+	}
 	Properties.RequirePass = getStr(v, "security.requirepass", Properties.RequirePass)
 	Properties.MasterAuth = getStr(v, "security.masterauth", Properties.MasterAuth)
 
@@ -328,4 +356,9 @@ func DetectConfigFile() (string, bool) {
 	}
 	slog.Info("wrote default standalone.toml, loading it")
 	return "standalone.toml", true
+}
+
+// containsPath checks if path contains the given substring (case-insensitive).
+func containsPath(path, substr string) bool {
+	return len(path) >= len(substr) && strings.Contains(path, substr)
 }

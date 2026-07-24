@@ -21,7 +21,7 @@ import (
 	"log/slog"
 )
 
-var godisVersion = "1.3.2" // do not modify
+var godisVersion = "8.8.0"
 
 var connIDCounter int64
 
@@ -129,6 +129,11 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 
 
 	cmdName := strings.ToLower(string(cmdLine[0]))
+
+	// Check rename-command: disabled commands return unknown command error
+	if newName, renamed := config.Properties.RenameCommands[strings.ToUpper(cmdName)]; renamed && newName == "" {
+		return protocol.MakeErrReply("ERR unknown command '" + cmdName + "'")
+	}
 	// ping
 	if cmdName == "ping" {
 		return Ping(c, cmdLine[1:])
@@ -592,7 +597,7 @@ func execHello(server *Server, c redis.Connection, args [][]byte) redis.Reply {
 			protocol.MakeBulkReply([]byte("modules")),
 		}
 		values := []redis.Reply{
-			protocol.MakeBulkReply([]byte("godis")),
+			protocol.MakeBulkReply([]byte("redis")),
 			protocol.MakeBulkReply([]byte(godisVersion)),
 			protocol.MakeIntReply(int64(proto)),
 			protocol.MakeIntReply(atomic.AddInt64(&connIDCounter, 1)),
@@ -605,7 +610,7 @@ func execHello(server *Server, c redis.Connection, args [][]byte) redis.Reply {
 
 	// RESP2 Array reply (flat key-value pairs)
 	infoPairs := [][]byte{
-		[]byte("server"), []byte("godis"),
+		[]byte("server"), []byte("redis"),
 		[]byte("version"), []byte(godisVersion),
 		[]byte("proto"), []byte(strconv.Itoa(proto)),
 		[]byte("id"), []byte(strconv.FormatInt(atomic.AddInt64(&connIDCounter, 1), 10)),

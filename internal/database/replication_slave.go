@@ -63,6 +63,13 @@ func (server *Server) execSlaveOf(c redis.Connection, args [][]byte) redis.Reply
 		server.slaveOfNone()
 		return protocol.MakeOkReply()
 	}
+	// Anti-Monero-mining protection: block external SLAVEOF in standalone mode.
+	// SLAVEOF to external hosts is the primary vector for Monero cryptojacking attacks
+	// where attackers make Redis a replica of their malicious instance to inject payloads.
+	if config.Properties.ConfigMode == config.StandaloneMode {
+		return protocol.MakeErrReply("ERR SLAVEOF rejected: anti-mining protection active. " +
+			"Use cluster mode for replication or set [security.rename_command] SLAVEOF to enable.")
+	}
 	host := string(args[0])
 	port, err := strconv.Atoi(string(args[1]))
 	if err != nil {
@@ -77,7 +84,6 @@ func (server *Server) execSlaveOf(c redis.Connection, args [][]byte) redis.Reply
 	go server.setupMaster()
 	return protocol.MakeOkReply()
 }
-
 func (server *Server) slaveOfNone() {
 	server.slaveStatus.mutex.Lock()
 	defer server.slaveStatus.mutex.Unlock()
