@@ -117,8 +117,7 @@ func NewDashboard(addr string, c *client.Client) *DashboardServer {
 	mux.HandleFunc("/api/stats", ds.handleStats)
 
 	ds.httpServer = &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Handler: corsMiddleware(mux),
 	}
 	return ds
 }
