@@ -111,15 +111,13 @@ func (te *TokenEngine) RevokeToken(token string) {
 }
 
 // Authenticate validates a password against requirepass and returns a token.
-// Returns nil if the password is wrong or no password is configured.
+// Returns nil if the password is wrong.
+// If no password is configured (requirePass == ""), a token is issued without password check.
 func (te *TokenEngine) Authenticate(password string, expiredHours int) *TokenEntry {
-	if te.requirePass == "" {
-		return nil
+	if te.requirePass == "" || password == te.requirePass {
+		return te.GenerateToken(expiredHours)
 	}
-	if password != te.requirePass {
-		return nil
-	}
-	return te.GenerateToken(expiredHours)
+	return nil
 }
 
 // IsAuthConfigured returns true if requirepass is set.

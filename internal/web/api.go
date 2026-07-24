@@ -165,11 +165,6 @@ func (s *ApiServer) handleAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.tokenEngine.IsAuthConfigured() {
-		writeJSON(w, http.StatusForbidden, errorResponse{Error: "no password configured on server"})
-		return
-	}
-
 	expiredHours := req.Expired
 	if expiredHours < 0 {
 		expiredHours = DefaultTokenExpiryHours
@@ -201,6 +196,11 @@ const AuthHeader = "X-HEADER-AUTHTOKEN"
 
 func (s *ApiServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// If no password is configured, allow all requests without token check
+		if !s.tokenEngine.IsAuthConfigured() {
+			next(w, r)
+			return
+		}
 		token := r.Header.Get(AuthHeader)
 		if token == "" {
 			writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "missing X-HEADER-AUTHTOKEN header"})
