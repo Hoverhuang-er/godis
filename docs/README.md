@@ -205,6 +205,8 @@ prometheus_port = 9121
 
 Godis provides a lightweight HTTP API server (default port `63790`) for programmatic access. It acts as a bridge between HTTP clients and the godis Redis-compatible engine — each API call is translated into a Redis RESP command and executed against the local godis instance.
 
+> **Source**: [`internal/web/api.go`](internal/web/api.go) — the complete HTTP API implementation with auth, command dispatch, and RESP reply formatting.
+
 #### Configuration
 
 Enable the HTTP API in `standalone.toml`:
@@ -358,12 +360,21 @@ curl "http://127.0.0.1:63790/api/commands?type=bf.add&key=bloom&member=item1" \
 
 #### OpenAPI / Apifox
 
-OpenAPI v3 specification and Apifox project export are available in the `docs/` directory:
+OpenAPI v3 specification and Apifox project export are available in the `docs/` directory.
+The specifications are generated from the `@internal/web/api.go` source code.
 
 | File | Description |
 |------|-------------|
 | [`docs/openapi.yaml`](docs/openapi.yaml) | OpenAPI 3.0.3 specification — import into Apifox, Postman, or any OpenAPI-compatible tool |
 | [`docs/apifox.json`](docs/apifox.json) | Apifox project export with pre-configured environment, auth variables, and 10+ example requests |
+
+**API Source Files:**
+
+| Source | Description |
+|--------|-------------|
+| [`internal/web/api.go`](internal/web/api.go) | HTTP API server: `POST /api/auth`, `GET /api/commands`, auth middleware, command dispatch, RESP reply formatting |
+| [`internal/web/token.go`](internal/web/token.go) | Token engine: password validation, 128-char token generation, expiry management, cleanup goroutine |
+| [`internal/web/dashboard.go`](internal/web/dashboard.go) | Web dashboard: embed HTML template, key access tracking, hot/big key detection, ops monitoring |
 
 **Import into Apifox:**
 
@@ -679,98 +690,25 @@ t.join(timeout=2)
 
 ## HTTP API
 
-Godis includes a built-in HTTP API server for programmatic access from any language. The API is **enabled by default** on port `63790` (configurable via `[http_api]` config section).
+> **Full documentation**: See [HTTP API Server](#http-api-server) above for complete endpoint details, auth flow, parameter mappings, response format, and cURL examples.
 
-### Authentication
+### API Specification Downloads
 
-Authenticate with the godis `requirepass` to receive a rotating token:
+OpenAPI v3 and Apifox project files are available for download from the `docs/` directory.
+These specifications cover the HTTP API Server (`POST /api/auth`, `GET /api/commands`) and
+the Web Dashboard API (`POST /api/query`, `GET /api/monitor`, `GET /api/stats`).
 
-```bash
-curl -X POST http://127.0.0.1:63790/api/auth \
-  -H 'Content-Type: application/json' \
-  -d '{"password":"yourpassword","expired":72}'
-```
+| File | Description |
+|------|-------------|
+| [`docs/openapi.yaml`](docs/openapi.yaml) | OpenAPI 3.0.3 — import into Apifox, Postman, Swagger UI, or any OpenAPI-compatible tool |
+| [`docs/apifox.json`](docs/apifox.json) | Apifox project export with pre-configured environments, assertions, and example requests |
 
-Response:
-```json
-{
-  "token": "XVQLRNEKBSMNGTZHYFWACPJODX...",
-  "expires_at": "2026-07-25T12:00:00Z",
-  "permanent": false
-}
-```
+#### Import into Apifox
 
-**Token parameters:**
-- `password` (required): The godis `requirepass` configured in `[security]`
-- `expired` (optional): Token TTL in hours. Default `72`. Set to `0` for a permanent token
-
-The token is a 128-character random uppercase ASCII string. Pass it in the `X-HEADER-AUTHTOKEN` header on subsequent requests.
-
-### Execute Commands
-
-All Redis commands are accessible via `GET /api/commands`:
-
-```bash
-# String: SET
-curl 'http://127.0.0.1:63790/api/commands?type=set&key=foo&value=bar' \
-  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
-# {"success":true,"result":"OK","raw":"+OK\r\n"}
-
-# String: GET
-curl 'http://127.0.0.1:63790/api/commands?type=get&key=foo' \
-  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
-# {"success":true,"result":"bar","raw":"$3\r\nbar\r\n"}
-
-# Hash
-curl 'http://127.0.0.1:63790/api/commands?type=hset&key=user:1&field=name&value=Alice' \
-  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
-
-curl 'http://127.0.0.1:63790/api/commands?type=hget&key=user:1&field=name' \
-  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
-
-# List
-curl 'http://127.0.0.1:63790/api/commands?type=lpush&key=mylist&value=a' \
-  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
-
-# Sorted Set
-curl 'http://127.0.0.1:63790/api/commands?type=zadd&key=leaderboard&score=100&member=player1&args=200%20player2' \
-  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
-
-# Server
-curl 'http://127.0.0.1:63790/api/commands?type=ping' \
-  -H 'X-HEADER-AUTHTOKEN: XVQLRNEKBSMNGTZHYFWACPJODX...'
-# {"success":true,"result":"PONG","raw":"+PONG\r\n"}
-```
-
-### Query Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `type` | string | Yes | Redis command name (set, get, hset, zadd, etc.) |
-| `key` | string | Conditional | Key name |
-| `value` | string | No | Value for write operations |
-| `field` | string | No | Hash field name |
-| `member` | string | No | Set / SortedSet member |
-| `score` | number | No | SortedSet score |
-| `args` | string | No | Additional space-separated arguments |
-| `db` | number | No | Database index (default: 0) |
-
-### Configuration
-
-```toml
-[http_api]
-# Enable the HTTP API server
-enabled = true
-
-# Bind address (use 0.0.0.0 for external access)
-host = "127.0.0.1"
-
-# Listen port
-port = 63790
-```
-
-The HTTP API server auto-starts inside the main godis process. To disable, set `enabled = false` in the `[http_api]` section.
-
+1. Apifox → **Settings** → **Import Data** → **OpenAPI / Swagger**
+2. Select `docs/openapi.yaml` or `docs/apifox.json`
+3. Environment `Local Godis` is pre-configured with `{{token}}` variable
+4. Run the auth example to auto-fill the token, then execute any API example
 ## Web Dashboard
 
 Godis includes a built-in web dashboard for browsing and monitoring Redis data. Launch it using the `--web` flag. The dashboard connects to a running godis instance via the standard Redis TCP port.
@@ -806,6 +744,100 @@ Open [http://localhost:63800](http://localhost:63800) in your browser to access:
 | `-p` | `6379` | Godis TCP port |
 | `-a` | (none) | Auth password (requirepass) |
 | `-u` | (none) | Redis URL (`redis://user:pass@host:port`) |
+
+### Dashboard API
+
+The dashboard exposes a REST API used by the frontend. These endpoints run on the
+`[web]` port (default **63800**) and require no authentication:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/query` | Execute a read-only Redis command |
+| `GET`  | `/api/monitor` | Get hot keys and big keys monitoring data |
+| `GET`  | `/api/stats` | Get server runtime statistics |
+
+**Source**: [`internal/web/dashboard.go`](internal/web/dashboard.go)
+
+#### POST /api/query
+
+Execute a read-only Redis command against the connected godis instance.
+Write commands (`SET`, `DEL`, etc.) are rejected for safety.
+
+**Request** (form-encoded):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cmd` | string | **Required.** Full Redis command line (e.g. `GET mykey`, `HGETALL user:1`) |
+
+**Response** (`200`):
+
+```json
+{
+  "success": true,
+  "result": "\"bar\"",
+  "error": ""
+}
+```
+
+**Allowed read-only commands**: `GET`, `MGET`, `STRLEN`, `EXISTS`, `TYPE`, `TTL`, `PTTL`, `KEYS`, `SCAN`,
+`HGET`, `HGETALL`, `HMGET`, `HEXISTS`, `HLEN`, `HKEYS`, `HVALS`, `HSTRLEN`,
+`LRANGE`, `LINDEX`, `LLEN`, `SMEMBERS`, `SCARD`, `SISMEMBER`, `SDIFF`, `SINTER`, `SUNION`,
+`ZRANGE`, `ZREVRANGE`, `ZRANK`, `ZREVRANK`, `ZSCORE`, `ZCARD`, `ZCOUNT`, `ZRANGEBYSCORE`,
+`XRANGE`, `XLEN`, `XREAD`, `GEODIST`, `GEOHASH`, `GEOPOS`,
+`INFO`, `PING`, `DBSIZE`, `TIME`,
+`FT.SEARCH`, `FT.INFO`, `FT._LIST`, `TS.GET`, `TS.INFO`, `TS.RANGE`,
+`JSON.GET`, `JSON.TYPE`, `JSON.STRLEN`, `JSON.OBJLEN`, `JSON.OBJKEYS`.
+
+#### GET /api/monitor
+
+Returns current hot key access counts and big key observations.
+
+**Response** (`200`):
+
+```json
+{
+  "hot_keys": [
+    {"key": "user:1001", "count": 1523},
+    {"key": "cache:session", "count": 891}
+  ],
+  "big_keys": [
+    {"key": "logs:2026-07", "db": 0, "type": "string", "size": 1, "bytes": 5242880}
+  ],
+  "db_stats": null
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `hot_keys` | array | Top 20 most frequently accessed keys (key name + access count) |
+| `big_keys` | array | Recently detected large keys (key name, DB index, type, element count, byte size) |
+| `db_stats` | null | Reserved for future per-database statistics |
+
+#### GET /api/stats
+
+Returns server runtime statistics and resource usage.
+
+**Response** (`200`):
+
+```json
+{
+  "uptime": 86400,
+  "goroutines": 34,
+  "memory": 16777216,
+  "connections": 12,
+  "commands": 150234,
+  "ops_per_sec": 1523
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `uptime` | integer | Server uptime in seconds |
+| `goroutines` | integer | Number of active goroutines |
+| `memory` | integer | Allocated heap memory in bytes |
+| `connections` | integer | Active client connections |
+| `commands` | integer | Total commands processed |
+| `ops_per_sec` | integer | Commands per second (rolling average) |
 
 ## Supported Commands
 
