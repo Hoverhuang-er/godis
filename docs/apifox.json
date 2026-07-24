@@ -1,14 +1,18 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Godis HTTP API",
-    "description": "Godis HTTP API provides token-based authentication and Redis command execution over HTTP. It acts as a bridge between HTTP clients and the underlying godis Redis-compatible in-memory database.\n\n## How It Works\n\nThe API server connects to a local godis instance via the Redis RESP protocol (same as redis-cli). Each `/api/commands` request is translated into a Redis command and executed against the local godis server.\n\n- Password equals the `requirepass` configured in godis\n- All Redis commands are supported\n- The `raw` field in responses shows the exact RESP protocol output",
+    "title": "Godis API",
+    "description": "Godis HTTP API provides token-based authentication and Redis command execution over HTTP. The Web Dashboard API provides query, monitoring, and statistics endpoints.\n\n## Services\n\n- **HTTP API Server** (port 63790): Token-based auth + Redis command execution\n- **Web Dashboard API** (port 63800): Query, hot keys, big keys, runtime stats",
     "version": "1.3.3"
   },
   "servers": [
     {
       "url": "http://127.0.0.1:63790",
       "description": "Local godis HTTP API server (default port)"
+    },
+    {
+      "url": "http://127.0.0.1:63800",
+      "description": "Local godis Web Dashboard API server (default port)"
     }
   ],
   "paths": {
@@ -228,6 +232,163 @@
           }
         }
       }
+    },
+    "/api/query": {
+      "post": {
+        "summary": "Execute a read-only Redis command (Dashboard)",
+        "description": "Execute a read-only Redis command against the connected godis instance. Write commands (SET, DEL, etc.) are rejected for safety. Designed for the web dashboard Query tab.",
+        "operationId": "dashboardQuery",
+        "tags": ["Dashboard"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["cmd"],
+                "properties": {
+                  "cmd": {
+                    "type": "string",
+                    "description": "Full Redis command line (e.g. GET mykey, HGETALL user:1)"
+                  }
+                }
+              },
+              "example": {
+                "cmd": "GET mykey"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Command executed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "result": { "type": "string" },
+                    "error": { "type": "string" }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "result": "\"bar\"",
+                  "error": ""
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Write command rejected or missing cmd",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "writeRejected": {
+                    "value": { "success": false, "result": "", "error": "read-only commands only (write not allowed)" }
+                  },
+                  "missingCmd": {
+                    "value": { "success": false, "result": "", "error": "cmd parameter required" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monitor": {
+      "get": {
+        "summary": "Get hot keys and big keys monitoring data (Dashboard)",
+        "description": "Returns current hot key access counts (top 20) and recently detected big key observations.",
+        "operationId": "dashboardMonitor",
+        "tags": ["Dashboard"],
+        "responses": {
+          "200": {
+            "description": "Monitoring data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hot_keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": { "type": "string" },
+                          "count": { "type": "integer", "format": "int64" }
+                        }
+                      }
+                    },
+                    "big_keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": { "type": "string" },
+                          "db": { "type": "integer" },
+                          "type": { "type": "string" },
+                          "size": { "type": "integer", "format": "int64" },
+                          "bytes": { "type": "integer", "format": "int64" }
+                        }
+                      }
+                    },
+                    "db_stats": { "type": "array", "nullable": true }
+                  }
+                },
+                "example": {
+                  "hot_keys": [
+                    { "key": "user:1001", "count": 1523 },
+                    { "key": "cache:session", "count": 891 }
+                  ],
+                  "big_keys": [
+                    { "key": "logs:2026-07", "db": 0, "type": "string", "size": 1, "bytes": 5242880 }
+                  ],
+                  "db_stats": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "summary": "Get server runtime statistics (Dashboard)",
+        "description": "Returns server runtime statistics including uptime, goroutine count, memory usage, connections, and command throughput.",
+        "operationId": "dashboardStats",
+        "tags": ["Dashboard"],
+        "responses": {
+          "200": {
+            "description": "Runtime statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "uptime": { "type": "integer", "format": "int64" },
+                    "goroutines": { "type": "integer" },
+                    "memory": { "type": "integer", "format": "int64" },
+                    "connections": { "type": "integer", "format": "int64" },
+                    "commands": { "type": "integer", "format": "int64" },
+                    "ops_per_sec": { "type": "integer", "format": "int64" }
+                  }
+                },
+                "example": {
+                  "uptime": 86400,
+                  "goroutines": 34,
+                  "memory": 16777216,
+                  "connections": 12,
+                  "commands": 150234,
+                  "ops_per_sec": 1523
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -242,7 +403,8 @@
   },
   "tags": [
     { "name": "Authentication", "description": "Token-based API authentication" },
-    { "name": "Commands", "description": "Redis command execution via HTTP" }
+    { "name": "Commands", "description": "Redis command execution via HTTP" },
+    { "name": "Dashboard", "description": "Web dashboard API — query, monitor, and stats endpoints" }
   ],
   "x-apifox": {
     "version": "2.0",
@@ -250,7 +412,7 @@
       {
         "name": "Local Godis",
         "serverUrl": "http://127.0.0.1:63790",
-        "description": "本地 godis 开发环境",
+        "description": "本地 godis HTTP API 开发环境",
         "variables": {
           "base_url": {
             "value": "http://127.0.0.1:63790",
@@ -264,6 +426,17 @@
         "headers": {
           "X-HEADER-AUTHTOKEN": "{{token}}"
         }
+      },
+      {
+        "name": "Dashboard",
+        "serverUrl": "http://127.0.0.1:63800",
+        "description": "Web Dashboard API 环境",
+        "variables": {
+          "base_url": {
+            "value": "http://127.0.0.1:63800",
+            "description": "Godis Dashboard API 地址"
+          }
+        }
       }
     ],
     "assertions": {
@@ -271,12 +444,6 @@
         {
           "type": "status_code",
           "value": 200,
-          "comparison": "equals"
-        },
-        {
-          "type": "json_body",
-          "jsonPath": "$.success",
-          "value": "true",
           "comparison": "equals"
         }
       ]
@@ -397,6 +564,29 @@
             "args": "'{\"name\":\"test\"}'"
           }
         }
+      },
+      {
+        "name": "11 - Dashboard 查询",
+        "endpoint": "POST /api/query",
+        "server": "Dashboard",
+        "parameters": {
+          "body": {
+            "contentType": "application/x-www-form-urlencoded",
+            "data": {
+              "cmd": "GET mykey"
+            }
+          }
+        }
+      },
+      {
+        "name": "12 - Dashboard 监控数据",
+        "endpoint": "GET /api/monitor",
+        "server": "Dashboard"
+      },
+      {
+        "name": "13 - Dashboard 统计信息",
+        "endpoint": "GET /api/stats",
+        "server": "Dashboard"
       }
     ]
   }
