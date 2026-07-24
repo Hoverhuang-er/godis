@@ -103,7 +103,6 @@ func main() {
 	listenAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
 
 	var shutdownDB idatabase.DB
-	var err error
 
 	if config.Properties.UseGnet {
 		var db idatabase.DB
@@ -122,7 +121,7 @@ func main() {
 			apiSrv.Start()
 		}
 
-		go func() { err = srv.Run(listenAddr) }()
+		go func() { _ = srv.Run(listenAddr) }()
 	} else {
 		handler := stdserver.MakeHandler()
 
@@ -133,7 +132,7 @@ func main() {
 			apiSrv.Start()
 		}
 
-		go func() { err = stdserver.Serve(listenAddr, handler) }()
+		go func() { _ = stdserver.Serve(listenAddr, handler) }()
 	}
 
 	// Wait for SIGINT/SIGTERM for graceful shutdown
