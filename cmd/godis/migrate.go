@@ -174,7 +174,8 @@ func runFullMigrateUI(src, dest *rclient.Client, destDB int) {
 	defer fmt.Print(migrateShowCursor)
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGWINCH)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	notifyWinch(sigCh)
 
 	ui := &fullMigrateUI{
 		src:    src,
