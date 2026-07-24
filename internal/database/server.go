@@ -3,6 +3,10 @@ package database
 import (
 	"errors"
 	"fmt"
+	"encoding/binary"
+	"path/filepath"
+
+	"github.com/boltdb/bolt"
 	"os"
 	"runtime/debug"
 	"strconv"
@@ -21,7 +25,7 @@ import (
 	"log/slog"
 )
 
-var godisVersion = "8.8.0"
+var godisVersion = "1.3.2" // do not modify
 
 var connIDCounter int64
 
@@ -40,6 +44,8 @@ type Server struct {
 	insertCallback database.KeyEventCallback
 	deleteCallback database.KeyEventCallback
 
+	// Bolt-backed persistent store, auto-saved on graceful shutdown
+	boltDB *bolt.DB
 	slogLogger *SlowLogger
 
 	// Prometheus metrics
@@ -108,6 +114,16 @@ func NewStandaloneServer() *Server {
 		monitoring.StartMetricsServer(server.metrics)
 	}
 
+	// Open or create bolt DB in the godis data directory
+	boltPath := filepath.Join(config.Properties.DataDir, "godis.db")
+	boltDB, err := bolt.Open(boltPath, 0o600, &bolt.Options{Timeout: 1 * time.Second})
+	if err != nil {
+		slog.Error("failed to open bolt db, starting without persistence", "path", boltPath, "error", err)
+	} else {
+		server.boltDB = boltDB
+		// Load persisted data from bolt on startup
+		server.loadFromBolt()
+	}
 	return server
 }
 
@@ -129,11 +145,6 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 
 
 	cmdName := strings.ToLower(string(cmdLine[0]))
-
-	// Check rename-command: disabled commands return unknown command error
-	if newName, renamed := config.Properties.RenameCommands[strings.ToUpper(cmdName)]; renamed && newName == "" {
-		return protocol.MakeErrReply("ERR unknown command '" + cmdName + "'")
-	}
 	// ping
 	if cmdName == "ping" {
 		return Ping(c, cmdLine[1:])
@@ -273,16 +284,119 @@ func (server *Server) GetMetrics() *monitoring.Metrics {
 
 // Close graceful shutdown database
 func (server *Server) Close() {
+	// Flush all data to bolt before shutdown
+	server.saveToBolt()
+	if server.boltDB != nil {
+		server.boltDB.Close()
+	}
 	server.slaveStatus.close()
 	if server.persister != nil {
 		server.persister.Close()
 	}
 	server.stopMaster()
 }
+
 func (server *Server) AfterClientClose(c redis.Connection) {
 	pubsub.UnsubscribeAll(server.hub, c)
 	if server.metrics != nil {
 		server.metrics.DecrConnections()
+	}
+}
+
+// boltKey encodes a dbIndex + key into a bolt bucket key.
+func boltKey(dbIndex int, key string) []byte {
+	buf := make([]byte, 2+len(key))
+	binary.BigEndian.PutUint16(buf, uint16(dbIndex))
+	copy(buf[2:], key)
+	return buf
+}
+
+// saveToBolt persists all in-memory data to the bolt DB.
+func (server *Server) saveToBolt() {
+	if server.boltDB == nil {
+		return
+	}
+	slog.Info("saving data to bolt for graceful shutdown...")
+	count := 0
+	err := server.boltDB.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte("data"))
+		if err != nil {
+			return err
+		}
+		// Clear existing data
+		_ = tx.DeleteBucket([]byte("data"))
+		bucket, err = tx.CreateBucket([]byte("data"))
+		if err != nil {
+			return err
+		}
+		for dbIndex := range config.Properties.Databases {
+			server.ForEach(dbIndex, func(key string, data *database.DataEntity, expiration *time.Time) bool {
+				val := DataToBytes(data.Data)
+				bk := boltKey(dbIndex, key)
+				if err := bucket.Put(bk, val); err != nil {
+					return false
+				}
+				count++
+				return true
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		slog.Error("bolt save failed", "error", err)
+	} else {
+		slog.Info("bolt save complete", "keys", count)
+	}
+}
+
+// DataToBytes converts a database value to raw bytes for persistence.
+func DataToBytes(data interface{}) []byte {
+	switch v := data.(type) {
+	case []byte:
+		return v
+	case string:
+		return []byte(v)
+	case interface{ ToBytes() []byte }:
+		return v.ToBytes()
+	default:
+		return []byte(fmt.Sprint(v))
+	}
+}
+
+// loadFromBolt restores in-memory data from the bolt DB on startup.
+func (server *Server) loadFromBolt() {
+	if server.boltDB == nil {
+		return
+	}
+	slog.Info("loading data from bolt...")
+	count := 0
+	err := server.boltDB.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("data"))
+		if bucket == nil {
+			return nil
+		}
+		return bucket.ForEach(func(k, v []byte) error {
+			if len(k) < 3 {
+				return nil
+			}
+			dbIndex := int(binary.BigEndian.Uint16(k[:2]))
+			key := string(k[2:])
+			if dbIndex >= config.Properties.Databases {
+				return nil
+			}
+			db := server.mustSelectDB(dbIndex)
+			entity := &database.DataEntity{
+				Data: protocol.MakeBulkReply(v),
+			}
+			db.PutEntity(key, entity)
+			count++
+			return nil
+		})
+	})
+	if err != nil {
+		slog.Error("bolt load failed", "error", err)
+	} else {
+		slog.Info("bolt load complete", "keys", count)
 	}
 }
 
@@ -597,7 +711,7 @@ func execHello(server *Server, c redis.Connection, args [][]byte) redis.Reply {
 			protocol.MakeBulkReply([]byte("modules")),
 		}
 		values := []redis.Reply{
-			protocol.MakeBulkReply([]byte("redis")),
+			protocol.MakeBulkReply([]byte("godis")),
 			protocol.MakeBulkReply([]byte(godisVersion)),
 			protocol.MakeIntReply(int64(proto)),
 			protocol.MakeIntReply(atomic.AddInt64(&connIDCounter, 1)),
@@ -610,7 +724,7 @@ func execHello(server *Server, c redis.Connection, args [][]byte) redis.Reply {
 
 	// RESP2 Array reply (flat key-value pairs)
 	infoPairs := [][]byte{
-		[]byte("server"), []byte("redis"),
+		[]byte("server"), []byte("godis"),
 		[]byte("version"), []byte(godisVersion),
 		[]byte("proto"), []byte(strconv.Itoa(proto)),
 		[]byte("id"), []byte(strconv.FormatInt(atomic.AddInt64(&connIDCounter, 1), 10)),
