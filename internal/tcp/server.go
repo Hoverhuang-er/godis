@@ -1,21 +1,19 @@
 package tcp
 
-/**
- * A tcp server
- */
-
 import (
 	"context"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/Hoverhuang-er/godis/internal/interface/tcp"
+	"github.com/panjf2000/ants/v2"
 	"log/slog"
 )
 
@@ -29,10 +27,45 @@ type Config struct {
 // ClientCounter Record the number of clients in the current Godis server
 var ClientCounter int32
 
+// handlerPool is the ants goroutine pool used for dispatching connection handlers.
+var handlerPool *ants.Pool
+
+// InitPool initializes the global ants goroutine pool for connection handling.
+func InitPool() {
+	var err error
+	handlerPool, err = ants.NewPool(300,
+		ants.WithPreAlloc(true),
+		ants.WithNonblocking(false),
+		ants.WithPanicHandler(func(err interface{}) {
+			slog.Error("tcp handler pool panic", "error", err)
+		}),
+	)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create tcp handler pool: %v", err))
+	}
+	slog.Info("tcp handler pool initialized", "size", 300)
+}
+
+// GetPoolRunning returns the number of currently running goroutines.
+func GetPoolRunning() int {
+	if handlerPool == nil {
+		return 0
+	}
+	return handlerPool.Running()
+}
+
+// GetPoolFree returns the number of free goroutines in the pool.
+func GetPoolFree() int {
+	if handlerPool == nil {
+		return 0
+	}
+	return handlerPool.Free()
+}
+
 // ListenAndServeWithSignal binds port and handle requests, blocking until receive stop signal
 func ListenAndServeWithSignal(cfg *Config, handler tcp.Handler) error {
 	closeChan := make(chan struct{})
-	sigCh := make(chan os.Signal)
+	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		sig := <-sigCh
@@ -45,7 +78,6 @@ func ListenAndServeWithSignal(cfg *Config, handler tcp.Handler) error {
 	if err != nil {
 		return err
 	}
-	//cfg.Address = listener.Addr().String()
 	slog.Info(fmt.Sprintf("bind: %s, start listening...", cfg.Address))
 	ListenAndServe(listener, handler, closeChan)
 	return nil
@@ -53,7 +85,10 @@ func ListenAndServeWithSignal(cfg *Config, handler tcp.Handler) error {
 
 // ListenAndServe binds port and handle requests, blocking until close
 func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan struct{}) {
-	// listen signal
+	if handlerPool == nil {
+		InitPool()
+	}
+
 	errCh := make(chan error, 1)
 	defer close(errCh)
 	go func() {
@@ -64,16 +99,16 @@ func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 			slog.Info(fmt.Sprintf("accept error: %s", er.Error()))
 		}
 		slog.Info("shutting down...")
-		_ = listener.Close() // listener.Accept() will return err immediately
-		_ = handler.Close()  // close connections
+		_ = listener.Close()
+		_ = handler.Close()
 	}()
 
 	ctx := context.Background()
 	var waitDone sync.WaitGroup
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			// learn from net/http/serve.go#Serve()
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
 				slog.Info(fmt.Sprintf("accept occurs temporary error: %v, retry in 5ms", err))
 				time.Sleep(5 * time.Millisecond)
@@ -82,17 +117,36 @@ func ListenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 			errCh <- err
 			break
 		}
-		// handle
-		// slog.Info("accept link")
+
 		ClientCounter++
 		waitDone.Add(1)
-		go func() {
+
+		err = handlerPool.Submit(func() {
 			defer func() {
 				waitDone.Done()
 				atomic.AddInt32(&ClientCounter, -1)
 			}()
 			handler.Handle(ctx, conn)
-		}()
+		})
+		if err != nil {
+			// Pool full or closed — fallback to raw goroutine
+			slog.Warn("tcp pool submit failed, fallback to raw goroutine", "error", err)
+			go func() {
+				defer func() {
+					waitDone.Done()
+					atomic.AddInt32(&ClientCounter, -1)
+				}()
+				handler.Handle(ctx, conn)
+			}()
+		}
 	}
 	waitDone.Wait()
+}
+
+// extractIP extracts the IP address from a "host:port" string.
+func extractIP(addr string) string {
+	if idx := strings.LastIndex(addr, ":"); idx != -1 {
+		return addr[:idx]
+	}
+	return addr
 }
