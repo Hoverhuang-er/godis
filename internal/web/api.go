@@ -41,9 +41,13 @@ func NewApiServer(addr, redisAddr, redisPassword string) *ApiServer {
 		tokenEngine: te,
 		clientReady: make(chan struct{}, 1),
 	}
+	InitSseHub(redisAddr, redisPassword)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/auth", s.handleAuth)
+	mux.HandleFunc("/api/subscribe", s.handleSubscribe)
+	mux.HandleFunc("/api/publish", s.authMiddleware(s.handlePublish))
+	mux.HandleFunc("/api/pipeline", s.authMiddleware(s.handlePipeline))
 	mux.HandleFunc("/api/commands", s.authMiddleware(s.handleCommands))
 
 	s.httpServer = &http.Server{
