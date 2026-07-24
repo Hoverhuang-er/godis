@@ -552,14 +552,6 @@ func runIncMigrate(src, dest *rclient.Client, destDB int) {
 	fmt.Print(migrateHideCursor)
 	defer fmt.Print(migrateShowCursor)
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGWINCH)
-
-	width := 80
-	if w, _, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-		width = w
-	}
-
 	fmt.Fprintf(os.Stderr, "\033[H\033[Jincremental migration started... scanning for new keys every 2s\n")
 	fmt.Fprintf(os.Stderr, "Press 'q' to stop\n")
 
@@ -601,11 +593,6 @@ func runIncMigrate(src, dest *rclient.Client, destDB int) {
 		// Wait for timer or quit
 		select {
 		case <-ticker.C:
-		case <-sigCh:
-			if w, h, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-				width = w
-				height = h
-			}
 		default:
 			// Check for 'q'
 			var buf [8]byte
