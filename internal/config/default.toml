@@ -19,6 +19,16 @@ dbfilename = "test.rdb"
 # requirepass = "yourpassword"
 # masterauth = "masterpassword"
 
+# Anti-Monero-mining: rename or disable dangerous commands.
+# Set value to "" to completely disable a command.
+# Set value to a new name to rename it (e.g. FLUSHALL = "myflushall").
+# SLAVEOF and REPLICAOF are the primary vectors for cryptojacking attacks.
+[security.rename_command]
+SLAVEOF = ""
+REPLICAOF = ""
+FLUSHALL = "b840fc02d52404542994ccf15b82f2c0"
+FLUSHDB = "b840fc02d52404542994ccf15b82f2c0"
+
 [replication]
 # announce_host = "5.5.5.5"
 # slave_announce_port = 6379
