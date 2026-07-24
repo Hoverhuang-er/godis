@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 	"strconv"
+	"time"
 
 	"github.com/Hoverhuang-er/godis/internal/cluster"
 	"github.com/Hoverhuang-er/godis/internal/config"
@@ -138,15 +139,19 @@ func main() {
 	// Wait for SIGINT/SIGTERM for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
-	slog.Info("received shutdown signal, gracefully shutting down...")
+	sig := <-sigCh
+	slog.Info("received shutdown signal, gracefully shutting down...", "signal", sig)
 
 	if shutdownDB != nil {
+		slog.Info("step 1/2: closing server and flushing data to ~/.godis ...")
+		start := time.Now()
 		if closer, ok := shutdownDB.(interface{ Close() }); ok {
 			closer.Close()
 		}
+		slog.Info("step 1/2: data flush complete",
+			"elapsed", time.Since(start).Round(time.Millisecond).String())
 	}
-	slog.Info("godis shutdown complete")
+	slog.Info("step 2/2: godis shutdown complete")
 }
 func startWebDashboard() {
 	flags := parseCLIFlags()
