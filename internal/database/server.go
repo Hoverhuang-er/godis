@@ -316,16 +316,24 @@ func (server *Server) saveToBolt() {
 	if server.boltDB == nil {
 		return
 	}
-	slog.Info("saving data to bolt for graceful shutdown...")
+
+	// Count total keys first for progress tracking
+	totalKeys := 0
+	for dbIndex := range config.Properties.Databases {
+		keyCount, _ := server.GetDBSize(dbIndex)
+		totalKeys += keyCount
+	}
+
+	start := time.Now()
+	slog.Info("saving data to bolt for graceful shutdown...",
+		"total_keys", totalKeys,
+		"path", filepath.Join(config.Properties.DataDir, "godis.db"))
+
 	count := 0
+	lastPct := 0
 	err := server.boltDB.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte("data"))
-		if err != nil {
-			return err
-		}
-		// Clear existing data
 		_ = tx.DeleteBucket([]byte("data"))
-		bucket, err = tx.CreateBucket([]byte("data"))
+		bucket, err := tx.CreateBucket([]byte("data"))
 		if err != nil {
 			return err
 		}
@@ -337,15 +345,38 @@ func (server *Server) saveToBolt() {
 					return false
 				}
 				count++
+				if totalKeys > 0 {
+					pct := count * 100 / totalKeys
+					if pct >= lastPct+10 || count%10000 == 0 {
+						lastPct = pct
+						elapsed := time.Since(start)
+						var eta time.Duration
+						if count > 0 {
+							eta = time.Duration(float64(elapsed)/float64(count)*float64(totalKeys)) - elapsed
+						}
+						slog.Info("bolt save progress",
+							"keys", count,
+							"total", totalKeys,
+							"pct", pct,
+							"elapsed", elapsed.Round(time.Millisecond).String(),
+							"eta", eta.Round(time.Second).String())
+					}
+				}
 				return true
 			})
 		}
 		return nil
 	})
+
+	elapsed := time.Since(start).Round(time.Millisecond)
 	if err != nil {
-		slog.Error("bolt save failed", "error", err)
+		slog.Error("bolt save failed", "keys", count, "total", totalKeys, "elapsed", elapsed, "error", err)
 	} else {
-		slog.Info("bolt save complete", "keys", count)
+		slog.Info("bolt save complete",
+			"keys", count,
+			"total", totalKeys,
+			"elapsed", elapsed.String(),
+			"path", filepath.Join(config.Properties.DataDir, "godis.db"))
 	}
 }
 
