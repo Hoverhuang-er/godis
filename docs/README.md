@@ -1,4 +1,4 @@
-# Godis v1.3.2
+# Godis v1.3.3
 
 ![license](https://img.shields.io/github/license/Hoverhuang-er/godis)
 [![Build Status](https://github.com/Hoverhuang-er/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/Hoverhuang-er/godis/actions?query=branch%3Amaster)
@@ -43,6 +43,7 @@ Key Features:
 - `MSET`, `MSETNX`, `DEL`, `Rename`, `RenameNX` command is supported and atomically executed in cluster mode, allow over multi node.
 - HTTP API server with token-based auth (POST /api/auth, GET /api/commands, X-HEADER-AUTHTOKEN)
 - Web dashboard for browsing and monitoring (launch with `--web` flag, port 63800)
+- Data migration tool (`--migrate full` / `--migrate inc`) — migrate data from godis to any Redis server with full and incremental modes
 - `MULTI` Commands Transaction is supported within slot in cluster mode
 
 If you could read Chinese, you can find more details in [My Blog](https://www.cnblogs.com/Finley/category/1598973.html).
@@ -121,6 +122,36 @@ Connect to any node to access the full dataset:
 ```bash
 redis-cli -p 6379
 ```
+
+### Data Migration (`--migrate`)
+
+Godis provides a built-in data migration tool to migrate data from godis to any Redis-compatible server.
+
+```bash
+# Full migration: scan all keys, show source/dest side-by-side in TUI
+godis --migrate full -dh 192.168.1.100 -dp 6379 -da destpassword -ddb 0
+
+# Incremental migration: watch for new keys and migrate them
+godis --migrate inc -dh 192.168.1.100 -dp 6379 -da destpassword
+
+# Optional: source auth (if local godis has requirepass set)
+godis --migrate full -dh 192.168.1.100 -dp 6379 -sa srcpassword
+```
+
+**Flags:**
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-dh` | Destination host | `127.0.0.1` |
+| `-dp` | Destination port | `6379` |
+| `-da` | Destination auth password | (none) |
+| `-ddb` | Destination database index | `0` |
+| `-sa` | Source (godis) auth password | (none) |
+
+**Full mode** shows a TUI with source keys on the left, destination keys on the right, progress bar, and scrollable key list. Press `q` to quit.
+
+**Inc mode** continuously polls the source for new keys every 2 seconds and migrates them to the destination. Press `q` to stop.
+
+> TODO: support Redis-to-Redis migration (arbitrary source, not just local godis).
 
 ### Prometheus Monitoring
 

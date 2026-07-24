@@ -556,10 +556,8 @@ func runIncMigrate(src, dest *rclient.Client, destDB int) {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGWINCH)
 
 	width := 80
-	height := 10
-	if w, h, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
+	if w, _, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
 		width = w
-		height = h
 	}
 
 	fmt.Fprintf(os.Stderr, "\033[H\033[Jincremental migration started... scanning for new keys every 2s\n")
@@ -626,4 +624,34 @@ func convertToCmdLine(args []string) [][]byte {
 		cmd[i] = []byte(a)
 	}
 	return cmd
+}
+
+func isErrorReply(reply interface{}) bool {
+	if reply == nil {
+		return false
+	}
+	if _, ok := reply.(*protocol.StandardErrReply); ok {
+		return true
+	}
+	if rr, ok := reply.(interface{ ToBytes() []byte }); ok {
+		b := rr.ToBytes()
+		return len(b) > 0 && b[0] == '-'
+	}
+	return false
+}
+
+func extractError(reply interface{}) string {
+	if reply == nil {
+		return ""
+	}
+	if err, ok := reply.(*protocol.StandardErrReply); ok {
+		return err.Status
+	}
+	if rr, ok := reply.(interface{ ToBytes() []byte }); ok {
+		b := rr.ToBytes()
+		if len(b) > 0 && b[0] == '-' {
+			return string(b[1 : len(b)-2])
+		}
+	}
+	return ""
 }

@@ -6,7 +6,8 @@ name: Test
 
 on:
   push:
-    branches: ["master", "github-actions", "main"]
+    branches: ["**"]
+    tags: ["**"]
   pull_request:
     branches: ["master", "main"]
   workflow_dispatch:
