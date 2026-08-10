@@ -78,6 +78,20 @@ func (server *Server) execSlaveOf(c redis.Connection, args [][]byte) redis.Reply
 	return protocol.MakeOkReply()
 }
 
+// MarkReplica marks the node as a replica of masterHost:masterPort without
+// starting a TCP replication connection. It is used by OSS-synced cluster
+// replication where the replica loads the master's snapshot from object
+// storage instead of syncing from the master's port directly.
+func (server *Server) MarkReplica(masterHost string, masterPort int) {
+	server.slaveStatus.mutex.Lock()
+	defer server.slaveStatus.mutex.Unlock()
+	atomic.StoreInt32(&server.role, slaveRole)
+	server.slaveStatus.masterHost = masterHost
+	server.slaveStatus.masterPort = masterPort
+	atomic.AddInt32(&server.slaveStatus.configVersion, 1)
+	server.slaveStatus.stopSlaveWithMutex()
+}
+
 func (server *Server) slaveOfNone() {
 	server.slaveStatus.mutex.Lock()
 	defer server.slaveStatus.mutex.Unlock()

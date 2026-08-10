@@ -55,6 +55,14 @@ func (cluster *Cluster) SlaveOf(master string) error {
 	if err != nil {
 		return errors.New("invalid master address")
 	}
+	if cluster.ossStore != nil {
+		// OSS-synced replication: load the master snapshot from object
+		// storage instead of connecting to the master's port directly.
+		if err := cluster.ossInitialSync(master); err != nil {
+			return err
+		}
+		return nil
+	}
 	c := connection.NewFakeConn()
 	reply := cluster.db.Exec(c, utils.ToCmdLine("slaveof", host, port))
 	if err := protocol.Try2ErrorReply(reply); err != nil {

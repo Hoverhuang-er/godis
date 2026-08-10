@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync/atomic"
@@ -15,6 +16,15 @@ import (
 	"github.com/hdt3213/rdb/core"
 	rdb "github.com/hdt3213/rdb/parser"
 )
+
+// GenerateRDB writes an RDB snapshot of the current dataset to rdbFilename.
+// It is used by cluster OSS replication to publish snapshot payloads.
+func (server *Server) GenerateRDB(rdbFilename string) error {
+	if server.persister == nil {
+		return errors.New("please enable aof before generating rdb snapshot")
+	}
+	return server.persister.GenerateRDB(rdbFilename)
+}
 
 // loadRdbFile loads rdb file from disk
 func (server *Server) loadRdbFile() error {
@@ -102,6 +112,21 @@ func NewPersister(db database.DBEngine, filename string, load bool, fsync string
 func (server *Server) AddAof(dbIndex int, cmdLine CmdLine) {
 	if server.persister != nil {
 		server.persister.SaveCmdLine(dbIndex, cmdLine)
+	}
+}
+
+// AddAofListener forwards cluster WAL replication commands to the AOF
+// persister, which notifies all registered listeners per command batch.
+func (server *Server) AddAofListener(listener aof.Listener) {
+	if server.persister != nil {
+		server.persister.AddListener(listener)
+	}
+}
+
+// RemoveAofListener detaches a previously registered AOF listener.
+func (server *Server) RemoveAofListener(listener aof.Listener) {
+	if server.persister != nil {
+		server.persister.RemoveListener(listener)
 	}
 }
 

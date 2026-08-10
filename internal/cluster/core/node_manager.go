@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Hoverhuang-er/godis/internal/cluster/raft"
+	"github.com/Hoverhuang-er/godis/internal/config"
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/logger"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
@@ -46,10 +47,21 @@ func init() {
 }
 
 // execJoin handles cluster-join command as raft leader
-// format: cluster-join redisAddress(advertised), raftAddress, masterId
+// format: cluster-join [clusterID,] redisAddress(advertised), raftAddress, [masterId]
+// When the seed node has a configured cluster id the joiner must present the
+// same id (second argument); seeds without a cluster id accept the legacy
+// format for backward compatibility.
 func execJoin(cluster *Cluster, c redis.Connection, cmdLine CmdLine) redis.Reply {
 	if len(cmdLine) < 3 {
 		return protocol.MakeArgNumErrReply(joinClusterCommand)
+	}
+	clusterID := config.Properties.ClusterID
+	idx := 1
+	if clusterID != "" {
+		if len(cmdLine) < 4 || string(cmdLine[1]) != clusterID {
+			return protocol.MakeErrReply("cluster id mismatch, join rejected")
+		}
+		idx = 2
 	}
 	state := cluster.raftNode.State()
 	if state != raft.Leader {
@@ -62,15 +74,15 @@ func execJoin(cluster *Cluster, c redis.Connection, cmdLine CmdLine) redis.Reply
 		return leaderConn.Send(cmdLine)
 	}
 	// self node is leader
-	redisAddr := string(cmdLine[1])
-	raftAddr := string(cmdLine[2])
+	redisAddr := string(cmdLine[idx])
+	raftAddr := string(cmdLine[idx+1])
 	err := cluster.raftNode.AddToRaft(redisAddr, raftAddr)
 	if err != nil {
 		return protocol.MakeErrReply(err.Error())
 	}
 	master := ""
-	if len(cmdLine) == 4 {
-		master = string(cmdLine[3])
+	if len(cmdLine) == idx+3 {
+		master = string(cmdLine[idx+2])
 	}
 	_, err = cluster.raftNode.Propose(&raft.LogEntry{
 		Event: raft.EventJoin,

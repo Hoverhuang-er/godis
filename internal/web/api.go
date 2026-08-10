@@ -1,10 +1,10 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -18,13 +18,13 @@ import (
 
 // ApiServer provides an HTTP API for godis operations with token-based auth.
 type ApiServer struct {
-	httpServer   *http.Server
-	client       *rclient.Client
-	tokenEngine  *TokenEngine
-	addr         string
-	redisAddr    string
-	redisPass    string
-	clientReady  chan struct{}
+	httpServer  *http.Server
+	client      *rclient.Client
+	tokenEngine *TokenEngine
+	addr        string
+	redisAddr   string
+	redisPass   string
+	clientReady chan struct{}
 }
 
 // NewApiServer creates a new API server.
@@ -50,6 +50,8 @@ func NewApiServer(addr, redisAddr, redisPassword string) *ApiServer {
 	mux.HandleFunc("/api/publish", s.authMiddleware(s.handlePublish))
 	mux.HandleFunc("/api/pipeline", s.authMiddleware(s.handlePipeline))
 	mux.HandleFunc("/api/commands", s.authMiddleware(s.handleCommands))
+	mux.HandleFunc("/api/cluster/join", s.authMiddleware(s.handleClusterJoin))
+	mux.HandleFunc("/api/cluster/status", s.authMiddleware(s.handleClusterStatus))
 
 	s.httpServer = &http.Server{
 		Addr:    addr,
@@ -746,4 +748,3 @@ func extractError(reply interface{}) string {
 	}
 	return ""
 }
-

@@ -61,11 +61,27 @@ max_len = 128
 # Enable cluster mode
 enable = true
 
+# Cluster identifier. The first node (seed) generates one and writes it back
+# here automatically when switching to cluster mode. Later nodes must use the
+# same value so joins are validated and OSS data lands in the same directory.
+# Leave empty on a seed; set it when joining an existing cluster.
+# cluster_id = ""
+
 # Set to true to create a new cluster (only effective when no cluster data exists on disk)
 # as_seed = true
 
 # Address of any node in the cluster to join (use Redis service address, NOT Raft)
 # seed = "127.0.0.1:6379"
+
+# OPTIONAL: join an existing cluster over the seed's HTTP API instead of the
+# TCP channel on the redis port. Set this to the seed's HTTP API address
+# (host:port of the 63790 server) to send the join handshake via
+# POST /api/cluster/join. Either transport works; leave empty to use `seed`.
+# join_http = "127.0.0.1:63790"
+
+# Auth token for HTTP joins, required only when the seed has a password
+# (get it from POST /api/auth on the seed).
+# join_http_token = ""
 
 # Raft consensus listen address
 # raft_listen_address = "0.0.0.0:16666"
@@ -75,6 +91,45 @@ enable = true
 
 # If joining as a replica of an existing node, set master's Redis address
 # master_in_cluster = "127.0.0.1:6379"
+
+# Health-probe interval in seconds (default 15). Tune higher for
+# high-latency links between nodes.
+# heartbeat_interval = 15
+
+# A master is considered dead after this many consecutive missed probes
+# (default 10, i.e. ~150s at the default interval).
+# failover_max_failures = 10
+
+# Max major-version gap allowed between nodes during OSS snapshot sync
+# (default 3).
+# max_version_gap = 3
+
+# Publish/pull OSS snapshots every N seconds (default 60).
+# snapshot_interval = 60
+
+# Replicate data between nodes via OSS instead of direct port connection.
+# Requires a valid [oss] section below.
+sync_via_oss = true
+
+[oss]
+# Enable OSS-based node-to-node sync (requires cluster.sync_via_oss = true)
+enabled = true
+
+# S3-compatible object storage endpoint (e.g. MinIO: "127.0.0.1:9000")
+endpoint = "127.0.0.1:9000"
+# Access key / secret for the bucket
+access_key_id = "minioadmin"
+secret_access_key = "minioadmin"
+# Bucket used to store node snapshots
+bucket = "godis-cluster"
+# Optional key prefix inside the bucket
+# prefix = ""
+# Object storage region (required by some providers)
+# region = "us-east-1"
+# Use HTTPS (AWS S3) or plain HTTP (local MinIO)
+use_ssl = false
+# Use path-style addressing (required for MinIO)
+force_path_style = true
 
 [http_api]
 # Enable the HTTP API server for programmatic access

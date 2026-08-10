@@ -24,6 +24,8 @@ coverage.txt
 node1/
 node2/
 logs
+*.db
+.sisyphus/
 
 # IDE
 .idea

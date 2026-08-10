@@ -10,6 +10,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	stdatomic "sync/atomic"
 
 	"github.com/Hoverhuang-er/godis/internal/cluster"
 	"github.com/Hoverhuang-er/godis/internal/config"
@@ -30,21 +31,47 @@ var (
 // Handler implements tcp.Handler and serves as a redis server
 type Handler struct {
 	activeConn sync.Map // *client -> placeholder
-	db         idatabase.DB
-	closing    atomic.Boolean // refusing new client and new request
+	// dbPtr is swapped atomically so a running node can switch between
+	// standalone and cluster mode without dropping client connections:
+	// each command loads the pointer once and executes against that view.
+	dbPtr   stdatomic.Pointer[idatabase.DB]
+	closing atomic.Boolean // refusing new client and new request
+}
+
+func (h *Handler) setDB(db idatabase.DB) {
+	h.dbPtr.Store(&db)
+}
+
+func (h *Handler) getDB() idatabase.DB {
+	return *h.dbPtr.Load()
+}
+
+// CurrentDB returns the active database engine (see DBSwapper in the cluster
+// package, used for the runtime standalone-to-cluster switch).
+func (h *Handler) CurrentDB() idatabase.DB {
+	return h.getDB()
 }
 
 // MakeHandler creates a Handler instance
 func MakeHandler() *Handler {
-	var db idatabase.DB
+	h := &Handler{}
+	h.setDB(makeDB())
+	return h
+}
+
+// makeDB builds the initial database engine from current config.
+func makeDB() idatabase.DB {
 	if config.Properties.ClusterEnable {
-		db = cluster.MakeCluster()
-	} else {
-		db = database.NewStandaloneServer()
+		return cluster.MakeCluster(nil)
 	}
-	return &Handler{
-		db: db,
-	}
+	return database.NewStandaloneServer()
+}
+
+// SwapDB atomically replaces the active database engine. Existing client
+// connections stay open; subsequent commands are routed through the new
+// engine.
+func (h *Handler) SwapDB(db idatabase.DB) {
+	h.setDB(db)
 }
 
 func Serve(addr string, handler *Handler, stopCh <-chan struct{}) error {
@@ -55,7 +82,7 @@ func Serve(addr string, handler *Handler, stopCh <-chan struct{}) error {
 
 func (h *Handler) closeClient(client *connection.Connection) {
 	_ = client.Close()
-	h.db.AfterClientClose(client)
+	h.getDB().AfterClientClose(client)
 	h.activeConn.Delete(client)
 }
 
@@ -70,7 +97,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 
 	client := connection.NewConn(conn)
 	// Track connection for Prometheus metrics
-	if srv, ok := h.db.(*database.Server); ok && srv.GetMetrics() != nil {
+	if srv, ok := h.getDB().(*database.Server); ok && srv.GetMetrics() != nil {
 		srv.GetMetrics().IncrConnections()
 	}
 
@@ -104,7 +131,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 			slog.Error("require multi bulk protocol")
 			continue
 		}
-		result := h.db.Exec(client, r.Args)
+		result := h.getDB().Exec(client, r.Args)
 		if result != nil {
 			_, _ = client.Write(result.ToBytes())
 		} else {
@@ -123,6 +150,6 @@ func (h *Handler) Close() error {
 		_ = client.Close()
 		return true
 	})
-	h.db.Close()
+	h.getDB().Close()
 	return nil
 }

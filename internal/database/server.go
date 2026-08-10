@@ -25,7 +25,13 @@ import (
 	"log/slog"
 )
 
-var godisVersion = "1.3.2" // do not modify
+var godisVersion = "1.3.4" // do not modify
+
+// Version returns the godis server version (e.g. "1.3.4").
+// It is used to enforce the cluster max major-version gap policy.
+func Version() string {
+	return godisVersion
+}
 
 var connIDCounter int64
 
@@ -445,6 +451,14 @@ func (server *Server) getDBStats() []monitoring.DBStat {
 		})
 	}
 	return stats
+}
+
+// SetClusterStatsFn registers the callback providing cluster-mode stats for
+// /metrics. It is a no-op when Prometheus metrics are disabled.
+func (server *Server) SetClusterStatsFn(fn func() monitoring.ClusterStats) {
+	if server.metrics != nil {
+		server.metrics.SetClusterStatsFn(fn)
+	}
 }
 
 func execSelect(c redis.Connection, mdb *Server, args [][]byte) redis.Reply {

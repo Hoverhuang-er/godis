@@ -50,12 +50,95 @@ godis 首先会从CONFIG环境变量中读取配置文件路径。若环境变�
 
 ## 集群模式
 
-可以使用 node1.conf 和 node2.conf 配置文件，在本地启动一个双节点集群:
+集群基于 [hashicorp/raft](https://github.com/hashicorp/raft) 构建，支持两种运行模式：
+
+- **主从模式（节点数 < 3）**：节点少于 3 个时，raft 无法在节点宕机后选出新领导者，因此采用经典主从语义。从节点定期探测主节点，连续失败达到配置次数后自动升主，默认带有主备切换。
+- **Raft 模式（节点数 ≥ 3）**：节点大于等于 3 个时，由 raft 算法统一决策成员变更、槽位路由与故障切换。
+
+探活间隔刻意放宽以容忍高延迟链路：节点每 `cluster_heartbeat_interval` 秒（默认 **15 秒**）互相探活一次，连续 `cluster_failover_max_failures` 次（默认 **10 次**）失败即判定节点失联，两个配置项均在 `[cluster]` 段。
+
+节点间数据复制通过 **OSS（S3 兼容）桶** 完成，而不是直接连接节点端口（设置 `cluster_sync_via_oss = true`）。主节点将命令追加到 **WAL（预写日志，与 AOF 相同的追加式数据流）** 并上传到 OSS，存储为 gzip 压缩但不加密的段文件；从节点拉取并回放这些段。对象 **只追加、不删除**（避免 S3 删除费用），节点间允许最多 **3 个大版本** 的代差（`cluster_max_version_gap`，默认 3）。
+
+**从单机热切换到集群模式（不丢数据、不断连接）：**
+
+节点可以以普通单机模式启动，运行时再切换为集群模式，全程不丢数据、不断开客户端连接：
+
+1. 以单机模式启动：`CONFIG=config/standalone.toml ./godis &`
+2. 在配置文件（或 Nacos）中将 `[cluster] enable` 改为 `true`（同时设置 `sync_via_oss = true` 并配置 `[oss]` 段）。godis 重新加载配置后，会把正在运行的服务器包装成集群并原子替换——现有连接不断开，现有数据不丢失。
+3. 首个被切换的节点会自动生成 **cluster_id** 并写回配置文件（或发布到 Nacos）的 `[cluster] cluster_id`。后续节点从自己的配置读取同一 id，加入时校验一致，且所有 OSS 数据都落在 `{prefix}/{cluster_id}/` 目录下。
+
+**启动 3 节点集群：**
 
 ```bash
-CONFIG=node1.conf ./godis-darwin &
-CONFIG=node2.conf ./godis-darwin &
+# node1 — 创建集群（as_seed = true，仅首个节点）
+CONFIG=config/cluster.toml ./godis &
+# node2、node3 — 通过任意已有节点的 Redis 地址加入
+#   seed = "127.0.0.1:6379"
+#   raft_listen_address = "0.0.0.0:16667"   # 每个节点唯一
+#   cluster_id = "<与 node1 相同>"
+CONFIG=config/cluster-node2.toml ./godis &
+CONFIG=config/cluster-node3.toml ./godis &
 ```
+
+**通过 HTTP 加入集群（与 TCP 方式并存，两种均支持）：**
+
+加入节点可以走 seed 的 HTTP API（端口 `63790`）发送加入握手，替代 Redis 端口的 TCP 通道。每个节点都暴露 `POST /api/cluster/join`，运维也可以手动注册节点：
+
+```bash
+# node2 配置：用 join_http 替代 seed
+#   join_http = "127.0.0.1:63790"   # seed 的 HTTP API 地址
+#   join_http_token = "<token>"     # 仅当 seed 配置了密码时需要
+CONFIG=config/cluster-node2.toml ./godis &
+
+# 或从任意机器手动注册节点：
+curl -X POST http://127.0.0.1:63790/api/cluster/join \
+  -H 'Content-Type: application/json' \
+  -d '{"cluster_id":"<id>","redis_addr":"127.0.0.1:6390","raft_addr":"127.0.0.1:16667"}'
+
+# 查看集群实时状态：
+curl http://127.0.0.1:63790/api/cluster/status
+```
+
+HTTP 加入与 TCP 加入执行完全相同的 raft 加入流程——seed 的 web 服务器把握手转发给本地 godis 节点，成员管理、OSS 同步与故障转移行为完全一致。
+
+**启动 2 节点主从集群：**
+
+```bash
+# node1 — 主节点（as_seed = true）
+CONFIG=config/cluster.toml ./godis &
+# node2 — node1 的从节点
+#   seed = "127.0.0.1:6379"
+#   master_in_cluster = "127.0.0.1:6379"
+CONFIG=config/cluster-node2.toml ./godis &
+```
+
+集群模式所需的最小 `[cluster]` / `[oss]` 配置：
+
+```toml
+[cluster]
+enable = true
+# cluster_id = "..."                 # 加入节点填写（种子节点自动写回）
+# as_seed = true                     # 仅首个节点
+# seed = "127.0.0.1:6379"            # 非种子节点的加入地址
+# raft_listen_address = "0.0.0.0:16666"
+# master_in_cluster = "127.0.0.1:6379"
+sync_via_oss = true
+
+[oss]
+enabled = true
+endpoint = "127.0.0.1:9000"          # 例如 MinIO 端点
+access_key_id = "minioadmin"
+secret_access_key = "minioadmin"
+bucket = "godis-cluster"
+use_ssl = false
+force_path_style = true              # MinIO 必需
+```
+
+当 OSS 不可用或未启用时，节点回退到直连 TCP 复制（旧行为）。
+
+**灾难恢复。** 后台 goroutine 持续监控 OSS 上的 state marker（每个节点一个小对象，记录其已应用的最大 WAL 序号）。**Raft 模式（≥ 3 节点）** 下主节点宕机由 raft 重新选出新主；集群缩减到 **3 节点以下** 时，幸存节点对比 marker 元数据，挑选数据最新（WAL 序号最大）的节点恢复为新主，无需人工干预。
+
+**集群指标（`:9121`）。** 开启 `prometheus_enabled = true` 后，`/metrics` 端点暴露 `godis_cluster_enabled`、`godis_cluster_mode`（`raft`/`master-slave`）、`godis_cluster_role`（`master`/`slave`）、`godis_cluster_master_info{master_id, master_addr}`、`godis_cluster_node_count`、`godis_cluster_wal_seq_applied` / `godis_cluster_wal_seq_published`、`godis_cluster_sync_last_success` / `godis_cluster_sync_lag_seconds` 以及 WAL 上传/下载耗时——足以精确定位主节点并观测复制延迟。
 
 集群模式对客户端是透明的，只要连接上集群中任意一个节点就可以访问集群中所有数据：
 

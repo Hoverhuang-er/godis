@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -6,20 +5,20 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"syscall"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/Hoverhuang-er/godis/internal/cluster"
 	"github.com/Hoverhuang-er/godis/internal/config"
 	"github.com/Hoverhuang-er/godis/internal/database"
 	idatabase "github.com/Hoverhuang-er/godis/internal/interface/database"
-	"github.com/Hoverhuang-er/godis/internal/lib/utils"
 	_ "github.com/Hoverhuang-er/godis/internal/lib/greenteagc"
+	"github.com/Hoverhuang-er/godis/internal/lib/logger"
+	"github.com/Hoverhuang-er/godis/internal/lib/utils"
 	rclient "github.com/Hoverhuang-er/godis/internal/redis/client"
 	"github.com/Hoverhuang-er/godis/internal/redis/server/gnet"
 	stdserver "github.com/Hoverhuang-er/godis/internal/redis/server/std"
-	"github.com/Hoverhuang-er/godis/internal/lib/logger"
 	"github.com/Hoverhuang-er/godis/internal/web"
 	"log/slog"
 )
@@ -45,7 +44,7 @@ var defaultProperties = &config.ServerProperties{
 	HttpApiPort:    63790,
 	HttpApiHost:    "127.0.0.1",
 	// Web Dashboard defaults
-	WebPort:        63800,
+	WebPort: 63800,
 }
 
 func fileExists(filename string) bool {
@@ -76,7 +75,6 @@ func main() {
 		TimeFormat: "2006-01-02",
 	})
 
-
 	// Determine config source
 	nacosAddr := os.Getenv("NACOS_ADDR")
 	if nacosAddr != "" {
@@ -105,15 +103,37 @@ func main() {
 	var shutdownDB idatabase.DB
 	stopCh := make(chan struct{})
 
+	web.RegisterClusterStatusFn(func() (map[string]interface{}, bool) {
+		cl := cluster.Current()
+		if cl == nil {
+			return nil, false
+		}
+		stats := cl.ClusterStats()
+		return map[string]interface{}{
+			"enabled":           stats.Enabled,
+			"cluster_id":        config.Properties.ClusterID,
+			"mode":              stats.Mode,
+			"role":              stats.Role,
+			"master_id":         stats.MasterID,
+			"master_addr":       stats.MasterAddr,
+			"node_count":        stats.NodeCount,
+			"sync_lag_seconds":  stats.SyncLagSeconds,
+			"wal_seq_applied":   stats.WalSeqApplied,
+			"wal_seq_published": stats.WalSeqPublished,
+		}, true
+	})
+
 	if config.Properties.UseGnet {
 		var db idatabase.DB
 		if config.Properties.ClusterEnable {
-			db = cluster.MakeCluster()
+			db = cluster.MakeCluster(nil)
 		} else {
 			db = database.NewStandaloneServer()
 		}
 		shutdownDB = db
 		srv := gnet.NewGnetServer(db)
+
+		cluster.RegisterHotSwitch(srv)
 
 		if config.Properties.HttpApiEnabled {
 			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))
@@ -125,6 +145,8 @@ func main() {
 		go func() { _ = srv.Run(listenAddr) }()
 	} else {
 		handler := stdserver.MakeHandler()
+
+		cluster.RegisterHotSwitch(handler)
 
 		if config.Properties.HttpApiEnabled {
 			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))

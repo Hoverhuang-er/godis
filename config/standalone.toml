@@ -70,6 +70,37 @@ worker_pool = true
 # Enable parallel relay for multi-node transactions (cluster mode only)
 relay_parallel = true
 
+# Cluster identifier. When cluster mode is enabled at runtime (hot-switch),
+# the first node generates this id and writes it back here automatically.
+# Joining nodes must use the same value. Leave empty for standalone mode.
+# cluster_id = ""
+
+# Health-probe interval in seconds (default 15)
+# heartbeat_interval = 15
+
+# Failover after this many consecutive missed probes (default 10)
+# failover_max_failures = 10
+
+# Max major-version gap between nodes during OSS snapshot sync (default 3)
+# max_version_gap = 3
+
+# Publish/pull OSS snapshots every N seconds (default 60)
+# snapshot_interval = 60
+
+# Replicate data between nodes via OSS (requires [oss] section)
+# sync_via_oss = false
+
+[oss]
+# S3-compatible object storage (unused unless cluster.sync_via_oss is true)
+# endpoint = "127.0.0.1:9000"
+# access_key_id = "minioadmin"
+# secret_access_key = "minioadmin"
+# bucket = "godis-cluster"
+# prefix = ""
+# region = "us-east-1"
+# use_ssl = false
+# force_path_style = true
+
 [azure]
 # Azure Entra ID (formerly Azure AD) authentication
 # Enable to accept Entra ID access tokens as AUTH credentials

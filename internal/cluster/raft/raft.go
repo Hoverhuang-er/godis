@@ -36,6 +36,11 @@ type RaftConfig struct {
 	RaftListenAddr     string
 	RaftAdvertiseAddr  string
 	Dir                string
+	// HeartbeatTimeout/ElectionTimeout override hashicorp/raft defaults
+	// (1s). For high-latency WAN links (e.g. OSS-synced clusters) set them
+	// to the configured health-probe interval. Zero keeps raft defaults.
+	HeartbeatTimeout time.Duration
+	ElectionTimeout  time.Duration
 }
 
 func (cfg *RaftConfig) ID() string {
@@ -55,6 +60,12 @@ func StartNode(cfg *RaftConfig) (*Node, error) {
 	if config.LocalID == "" {
 		// cfg.ID() actually is  cfg.RedisAdvertiseAddr
 		return nil, errors.New("redis address is required")
+	}
+	if cfg.HeartbeatTimeout > 0 {
+		config.HeartbeatTimeout = cfg.HeartbeatTimeout
+	}
+	if cfg.ElectionTimeout > 0 {
+		config.ElectionTimeout = cfg.ElectionTimeout
 	}
 	leaderNotifyCh := make(chan bool, 10)
 	config.NotifyCh = leaderNotifyCh
@@ -171,6 +182,23 @@ func (node *Node) AddToRaft(redisAddr, raftAddr string) error {
 	}
 	future := node.inner.AddVoter(id, raft.ServerAddress(raftAddr), 0, 0)
 	return future.Error()
+}
+
+// VoterCount returns the number of voting members in the raft group.
+// Clusters with fewer than 3 voters run in master-slave mode where
+// failover is decided by heartbeat monitoring instead of raft quorum.
+func (node *Node) VoterCount() int {
+	configFuture := node.inner.GetConfiguration()
+	if err := configFuture.Error(); err != nil {
+		return 0
+	}
+	count := 0
+	for _, srv := range configFuture.Configuration().Servers {
+		if srv.Suffrage == raft.Voter {
+			count++
+		}
+	}
+	return count
 }
 
 func (node *Node) HandleEvict(redisAddr string) error {

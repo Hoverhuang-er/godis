@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,9 +22,9 @@ import (
 const (
 	hotKeyTopN         = 20
 	bigKeyTopN         = 20
-	bigKeyStringBytes  = 1024 * 1024  // 1 MB string threshold
-	bigKeyListLength   = 10000        // 10k elements
-	bigKeySetLength    = 5000         // 5k elements
+	bigKeyStringBytes  = 1024 * 1024 // 1 MB string threshold
+	bigKeyListLength   = 10000       // 10k elements
+	bigKeySetLength    = 5000        // 5k elements
 	bigKeyZSetLength   = 5000
 	bigKeyHashLength   = 5000
 	hotKeyResetSeconds = 300 // reset hot key counters every 5 min
@@ -47,6 +48,9 @@ type Metrics struct {
 	// DB stats callback
 	dbStatsFn func() []DBStat
 
+	// Cluster stats callback, registered when this node runs cluster mode
+	clusterStatsFn func() ClusterStats
+
 	// Big key tracking
 	bigKeysMu sync.RWMutex
 	bigKeys   []BigKeyInfo
@@ -63,6 +67,22 @@ type DBStat struct {
 	Expires int64
 }
 
+// ClusterStats is a snapshot of cluster-mode state scraped for /metrics.
+type ClusterStats struct {
+	Enabled         bool
+	Mode            string // raft, master-slave, standalone
+	Role            string // master, slave, none
+	MasterID        string
+	MasterAddr      string
+	NodeCount       int
+	SyncLastSuccess int64 // unix ts of last successful WAL push/pull
+	SyncLagSeconds  float64
+	WalSeqApplied   uint64 // highest WAL seq applied locally
+	WalSeqPublished uint64 // highest WAL seq published by the master
+	LastUploadMs    float64
+	LastDownloadMs  float64
+}
+
 // BigKeyInfo describes a key that exceeds size thresholds.
 type BigKeyInfo struct {
 	Key   string
@@ -74,10 +94,10 @@ type BigKeyInfo struct {
 
 // HotKeyInfo describes a frequently accessed key.
 type HotKeyInfo struct {
-	Key     string
-	DB      int
-	Count   int64
-	Type    string // string, list, set, zset, hash
+	Key   string
+	DB    int
+	Count int64
+	Type  string // string, list, set, zset, hash
 }
 
 // New creates a Metrics instance.
@@ -90,6 +110,12 @@ func New(dbStatsFn func() []DBStat) *Metrics {
 	go m.tickLoop()
 	go m.hotKeyResetLoop()
 	return m
+}
+
+// SetClusterStatsFn registers the callback providing cluster-mode stats.
+// Standalone nodes leave it nil and emit no cluster metrics.
+func (m *Metrics) SetClusterStatsFn(fn func() ClusterStats) {
+	m.clusterStatsFn = fn
 }
 
 func (m *Metrics) tickLoop() {
@@ -112,11 +138,11 @@ func (m *Metrics) hotKeyResetLoop() {
 
 // --- Counters ---
 
-func (m *Metrics) IncrCommands()         { m.totalCommands.Add(1); m.opsCount++ }
-func (m *Metrics) IncrConnections()      { m.totalConnections.Add(1); m.currConnections.Add(1) }
-func (m *Metrics) DecrConnections()      { m.currConnections.Add(-1) }
-func (m *Metrics) IncrKeyspaceHits()     { m.keyspaceHits.Add(1) }
-func (m *Metrics) IncrKeyspaceMisses()   { m.keyspaceMisses.Add(1) }
+func (m *Metrics) IncrCommands()       { m.totalCommands.Add(1); m.opsCount++ }
+func (m *Metrics) IncrConnections()    { m.totalConnections.Add(1); m.currConnections.Add(1) }
+func (m *Metrics) DecrConnections()    { m.currConnections.Add(-1) }
+func (m *Metrics) IncrKeyspaceHits()   { m.keyspaceHits.Add(1) }
+func (m *Metrics) IncrKeyspaceMisses() { m.keyspaceMisses.Add(1) }
 
 // --- Hot key tracking ---
 
@@ -166,7 +192,7 @@ func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	runtime.ReadMemStats(&memStats)
 
 	bi, ok := debug.ReadBuildInfo()
-	version := "1.3.1"
+	version := "1.3.4"
 	if ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
 		version = bi.Main.Version
 	}
@@ -280,6 +306,59 @@ func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "redis_hot_key_info{key=\"%s\"} %d\n", hk.key, hk.count)
 	}
 
+	// ---- Cluster metrics (only in cluster mode) ----
+	if m.clusterStatsFn != nil {
+		cs := m.clusterStatsFn()
+		enabled := 0
+		if cs.Enabled {
+			enabled = 1
+		}
+		fmt.Fprintf(w, "# HELP godis_cluster_enabled Whether cluster mode is enabled on this node\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_enabled gauge\n")
+		fmt.Fprintf(w, "godis_cluster_enabled %d\n", enabled)
+
+		fmt.Fprintf(w, "# HELP godis_cluster_mode Cluster mode: raft, master-slave or standalone\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_mode gauge\n")
+		fmt.Fprintf(w, "godis_cluster_mode{mode=\"%s\"} 1\n", cs.Mode)
+
+		fmt.Fprintf(w, "# HELP godis_cluster_role Role of this node: master, slave or none\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_role gauge\n")
+		fmt.Fprintf(w, "godis_cluster_role{role=\"%s\"} 1\n", cs.Role)
+
+		fmt.Fprintf(w, "# HELP godis_cluster_master_info Current master of this node\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_master_info gauge\n")
+		fmt.Fprintf(w, "godis_cluster_master_info{master_id=\"%s\",master_addr=\"%s\"} 1\n",
+			sanitizeLabel(cs.MasterID), sanitizeLabel(cs.MasterAddr))
+
+		fmt.Fprintf(w, "# HELP godis_cluster_node_count Number of nodes in the cluster\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_node_count gauge\n")
+		fmt.Fprintf(w, "godis_cluster_node_count %d\n", cs.NodeCount)
+
+		fmt.Fprintf(w, "# HELP godis_cluster_wal_seq_applied Highest WAL segment seq applied locally\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_wal_seq_applied gauge\n")
+		fmt.Fprintf(w, "godis_cluster_wal_seq_applied %d\n", cs.WalSeqApplied)
+
+		fmt.Fprintf(w, "# HELP godis_cluster_wal_seq_published Highest WAL segment seq published by master\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_wal_seq_published gauge\n")
+		fmt.Fprintf(w, "godis_cluster_wal_seq_published %d\n", cs.WalSeqPublished)
+
+		fmt.Fprintf(w, "# HELP godis_cluster_sync_last_success Unix timestamp of last successful WAL sync\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_sync_last_success gauge\n")
+		fmt.Fprintf(w, "godis_cluster_sync_last_success %d\n", cs.SyncLastSuccess)
+
+		fmt.Fprintf(w, "# HELP godis_cluster_sync_lag_seconds Time since last successful WAL sync\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_sync_lag_seconds gauge\n")
+		fmt.Fprintf(w, "godis_cluster_sync_lag_seconds %v\n", cs.SyncLagSeconds)
+
+		fmt.Fprintf(w, "# HELP godis_cluster_wal_upload_ms Last WAL segment upload duration in ms\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_wal_upload_ms gauge\n")
+		fmt.Fprintf(w, "godis_cluster_wal_upload_ms %v\n", cs.LastUploadMs)
+
+		fmt.Fprintf(w, "# HELP godis_cluster_wal_download_ms Last WAL segment download duration in ms\n")
+		fmt.Fprintf(w, "# TYPE godis_cluster_wal_download_ms gauge\n")
+		fmt.Fprintf(w, "godis_cluster_wal_download_ms %v\n", cs.LastDownloadMs)
+	}
+
 	// ---- Go runtime metrics ----
 	fmt.Fprintf(w, "# HELP go_goroutines Number of goroutines\n")
 	fmt.Fprintf(w, "# TYPE go_goroutines gauge\n")
@@ -293,6 +372,14 @@ func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "go_gc_duration_seconds{quantile=\"1\"} %v\n", quantile(memStats.PauseNs[:], 1))
 	fmt.Fprintf(w, "go_gc_duration_seconds_sum %v\n", float64(memStats.PauseTotalNs)/1e9)
 	fmt.Fprintf(w, "go_gc_duration_seconds_count %d\n", memStats.NumGC)
+}
+
+// sanitizeLabel escapes a Prometheus label value.
+func sanitizeLabel(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	return s
 }
 
 func quantile(nums []uint64, q float64) float64 {

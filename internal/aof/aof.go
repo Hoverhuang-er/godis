@@ -116,6 +116,14 @@ func (persister *Persister) RemoveListener(listener Listener) {
 	delete(persister.listeners, listener)
 }
 
+// AddListener registers a listener that receives every command batch written
+// to the AOF. Listeners are called synchronously in writeAof.
+func (persister *Persister) AddListener(listener Listener) {
+	persister.pausingAof.Lock()
+	defer persister.pausingAof.Unlock()
+	persister.listeners[listener] = struct{}{}
+}
+
 // SaveCmdLine send command to aof goroutine through channel
 func (persister *Persister) SaveCmdLine(dbIndex int, cmdLine CmdLine) {
 	// aofChan will be set as nil temporarily during load aof see Persister.LoadAof

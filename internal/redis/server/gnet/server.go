@@ -17,13 +17,34 @@ type GnetServer struct {
 	gnet.BuiltinEventEngine
 	eng       gnet.Engine
 	connected int32
-	db        database.DB
+	// dbPtr is swapped atomically to switch between standalone and cluster
+	// mode at runtime without dropping connections (see SwapDB).
+	dbPtr atomic.Pointer[database.DB]
+}
+
+func (s *GnetServer) setDB(db database.DB) {
+	s.dbPtr.Store(&db)
+}
+
+func (s *GnetServer) getDB() database.DB {
+	return *s.dbPtr.Load()
+}
+
+// CurrentDB returns the active database engine (see DBSwapper in the cluster
+// package, used for the runtime standalone-to-cluster switch).
+func (s *GnetServer) CurrentDB() database.DB {
+	return s.getDB()
+}
+
+// SwapDB atomically replaces the active database engine.
+func (s *GnetServer) SwapDB(db database.DB) {
+	s.setDB(db)
 }
 
 func NewGnetServer(db database.DB) *GnetServer {
-	return &GnetServer{
-		db: db,
-	}
+	s := &GnetServer{}
+	s.setDB(db)
+	return s
 }
 
 func (s *GnetServer) Run(listenAddr string) error {
@@ -48,7 +69,7 @@ func (s *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	}
 	atomic.AddInt32(&s.connected, -1)
 	conn := c.Context().(redis.Connection)
-	s.db.AfterClientClose(conn)
+	s.getDB().AfterClientClose(conn)
 	return
 }
 
@@ -62,7 +83,7 @@ func (s *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	if len(cmdLine) == 0 {
 		return gnet.None
 	}
-	result := s.db.Exec(conn, cmdLine)
+	result := s.getDB().Exec(conn, cmdLine)
 	buffer := result.ToBytes()
 	if len(buffer) > 0 {
 		c.Write(buffer)

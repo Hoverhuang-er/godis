@@ -4,14 +4,15 @@ import (
 	_ "embed"
 	"net"
 	"os"
-	"path/filepath"
 	"os/user"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/fsnotify/fsnotify"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/fsnotify/fsnotify"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
@@ -19,6 +20,7 @@ import (
 	"github.com/spf13/viper"
 	"log/slog"
 )
+
 var (
 	ClusterMode    = "cluster"
 	StandaloneMode = "standalone"
@@ -53,9 +55,22 @@ type ServerProperties struct {
 	SlowLogSlowerThan int64 `cfg:"slowlog-log-slower-than" toml:"slowlog_log_slower_than"`
 	SlowLogMaxLen     int   `cfg:"slowlog-max-len" toml:"slowlog_max_len"`
 
-	ClusterEnable        bool   `cfg:"cluster-enable" toml:"cluster_enable"`
-	ClusterAsSeed        bool   `cfg:"cluster-as-seed" toml:"cluster_as_seed"`
-	ClusterSeed          string `cfg:"cluster-seed" toml:"cluster_seed"`
+	ClusterEnable bool   `cfg:"cluster-enable" toml:"cluster_enable"`
+	ClusterAsSeed bool   `cfg:"cluster-as-seed" toml:"cluster_as_seed"`
+	ClusterSeed   string `cfg:"cluster-seed" toml:"cluster_seed"`
+	// ClusterJoinHTTP optionally points at the HTTP API (port 63790) of the
+	// seed node. When set, a joining node sends its cluster-join handshake
+	// over HTTP (POST /api/cluster/join) instead of the TCP join channel on
+	// the seed's redis port. Either transport may be used; leave empty to
+	// join via the classic TCP channel (ClusterSeed).
+	ClusterJoinHTTP string `cfg:"cluster-join-http" toml:"cluster_join_http"`
+	// ClusterJoinHTTPToken is the auth token used for HTTP cluster joins
+	// when the seed has a password configured.
+	ClusterJoinHTTPToken string `cfg:"cluster-join-http-token" toml:"cluster_join_http_token"`
+	// ClusterID uniquely identifies the cluster. It is auto-generated and
+	// written back to the config source when the first node switches to
+	// cluster mode; joining nodes must present the same id.
+	ClusterID            string `cfg:"cluster-id" toml:"cluster_id"`
 	RaftListenAddr       string `cfg:"raft-listen-address" toml:"raft_listen_address"`
 	RaftAdvertiseAddr    string `cfg:"raft-advertise-address" toml:"raft_advertise_address"`
 	MasterInCluster      string `cfg:"master-in-cluster" toml:"master_in_cluster"`
@@ -63,6 +78,30 @@ type ServerProperties struct {
 	ClusterRelayParallel bool   `cfg:"cluster-relay-parallel" toml:"cluster_relay_parallel"`
 	AzureEntraTenantID   string `cfg:"azure-entra-tenant-id" toml:"azure_entra_tenant_id"`
 	AzureEntraAppID      string `cfg:"azure-entra-app-id" toml:"azure_entra_app_id"`
+
+	// Cluster tuning: heartbeat probe interval (seconds), failover threshold
+	// (consecutive missed probes before a master is considered dead), the maximum
+	// allowed major-version gap between nodes, and whether node-to-node data
+	// replication goes through OSS instead of direct TCP connections.
+	ClusterHeartbeatInterval   int  `cfg:"cluster-heartbeat-interval" toml:"cluster_heartbeat_interval"`
+	ClusterFailoverMaxFailures int  `cfg:"cluster-failover-max-failures" toml:"cluster_failover_max_failures"`
+	ClusterMaxVersionGap       int  `cfg:"cluster-max-version-gap" toml:"cluster_max_version_gap"`
+	ClusterSyncViaOss          bool `cfg:"cluster-sync-via-oss" toml:"cluster_sync_via_oss"`
+	ClusterSnapshotInterval    int  `cfg:"cluster-snapshot-interval" toml:"cluster_snapshot_interval"`
+
+	// OSS (S3-compatible object storage) settings. Used for node-to-node
+	// data replication in cluster mode: masters upload compressed RDB
+	// snapshots, replicas download them. Snapshots are compressed with gzip
+	// and intentionally NOT encrypted.
+	OssEnabled         bool   `cfg:"oss-enabled" toml:"oss_enabled"`
+	OssEndpoint        string `cfg:"oss-endpoint" toml:"oss_endpoint"`
+	OssBucket          string `cfg:"oss-bucket" toml:"oss_bucket"`
+	OssAccessKeyID     string `cfg:"oss-access-key-id" toml:"oss_access_key_id"`
+	OssSecretAccessKey string `cfg:"oss-secret-access-key" toml:"oss_secret_access_key"`
+	OssRegion          string `cfg:"oss-region" toml:"oss_region"`
+	OssPrefix          string `cfg:"oss-prefix" toml:"oss_prefix"`
+	OssUseSSL          bool   `cfg:"oss-use-ssl" toml:"oss_use_ssl"`
+	OssForcePathStyle  bool   `cfg:"oss-force-path-style" toml:"oss_force_path_style"`
 
 	// HTTP API settings
 	HttpApiEnabled bool   `cfg:"http-api-enabled" toml:"http_api_enabled"`
@@ -98,32 +137,60 @@ func (p *ServerProperties) RaftAnnounceAddress() string {
 	return p.RaftListenAddr
 }
 
+func (p *ServerProperties) HeartbeatInterval() time.Duration {
+	interval := p.ClusterHeartbeatInterval
+	if interval <= 0 {
+		interval = 15
+	}
+	return time.Duration(interval) * time.Second
+}
+
+func (p *ServerProperties) FailoverTimeout() time.Duration {
+	interval := p.ClusterHeartbeatInterval
+	if interval <= 0 {
+		interval = 15
+	}
+	failures := p.ClusterFailoverMaxFailures
+	if failures <= 0 {
+		failures = 10
+	}
+	return time.Duration(interval*failures) * time.Second
+}
+
 var Properties *ServerProperties
 var EachTimeServerInfo *ServerInfo
 
 func init() {
 	Properties = &ServerProperties{
-		Bind:                 "0.0.0.0",
-		Port:                 6379,
-		MaxClients:           128,
-		Databases:            16,
-		AppendFsync:          "everysec",
-		AofUseRdbPreamble:    true,
-		SlowLogSlowerThan:    10000,
-		SlowLogMaxLen:        128,
-		PrometheusEnabled:    true,
-		PrometheusPort:       9121,
-		ClusterWorkerPool:    true,
-		ClusterRelayParallel: true,
-		AzureEntraTenantID:   "",
-		AzureEntraAppID:      "",
-		HttpApiEnabled:       true,
-		HttpApiHost:          "127.0.0.1",
-		HttpApiPort:          63790,
-		WebPort:              63800,
+		Bind:                       "0.0.0.0",
+		Port:                       6379,
+		MaxClients:                 128,
+		Databases:                  16,
+		AppendFsync:                "everysec",
+		AofUseRdbPreamble:          true,
+		SlowLogSlowerThan:          10000,
+		SlowLogMaxLen:              128,
+		PrometheusEnabled:          true,
+		PrometheusPort:             9121,
+		ClusterWorkerPool:          true,
+		ClusterRelayParallel:       true,
+		AzureEntraTenantID:         "",
+		AzureEntraAppID:            "",
+		ClusterHeartbeatInterval:   15,
+		ClusterFailoverMaxFailures: 10,
+		ClusterMaxVersionGap:       3,
+		ClusterSyncViaOss:          false,
+		ClusterSnapshotInterval:    60,
+		OssUseSSL:                  false,
+		OssForcePathStyle:          false,
+		HttpApiEnabled:             true,
+		HttpApiHost:                "127.0.0.1",
+		HttpApiPort:                63790,
+		WebPort:                    63800,
 	}
 	EachTimeServerInfo = &ServerInfo{}
 }
+
 //go:embed default.toml
 var defaultConfigContent string
 
@@ -142,7 +209,6 @@ func SetupConfig(configFilename string) {
 	v := viper.New()
 	v.SetConfigFile(configFilename)
 
-
 	EachTimeServerInfo.StartUpTime = time.Now()
 	if err := v.ReadInConfig(); err != nil {
 		slog.Warn("failed to read config file, using defaults", "path", configFilename, "error", err)
@@ -150,7 +216,6 @@ func SetupConfig(configFilename string) {
 	}
 
 	populateFromViper(v)
-
 
 	// Hot-reload: watch config file for changes
 	v.WatchConfig()
@@ -192,11 +257,30 @@ func populateFromViper(v *viper.Viper) {
 	Properties.ClusterEnable = getBool(v, "cluster.enable", Properties.ClusterEnable)
 	Properties.ClusterAsSeed = getBool(v, "cluster.as_seed", Properties.ClusterAsSeed)
 	Properties.ClusterSeed = getStr(v, "cluster.seed", Properties.ClusterSeed)
+	Properties.ClusterJoinHTTP = getStr(v, "cluster.join_http", Properties.ClusterJoinHTTP)
+	Properties.ClusterJoinHTTPToken = getStr(v, "cluster.join_http_token", Properties.ClusterJoinHTTPToken)
+	Properties.ClusterID = getStr(v, "cluster.cluster_id", Properties.ClusterID)
 	Properties.RaftListenAddr = getStr(v, "cluster.raft_listen_address", Properties.RaftListenAddr)
 	Properties.RaftAdvertiseAddr = getStr(v, "cluster.raft_advertise_address", Properties.RaftAdvertiseAddr)
 	Properties.MasterInCluster = getStr(v, "cluster.master_in_cluster", Properties.MasterInCluster)
 
 	Properties.ClusterWorkerPool = getBool(v, "cluster.worker_pool", Properties.ClusterWorkerPool)
+
+	Properties.ClusterHeartbeatInterval = getInt(v, "cluster.heartbeat_interval", Properties.ClusterHeartbeatInterval)
+	Properties.ClusterFailoverMaxFailures = getInt(v, "cluster.failover_max_failures", Properties.ClusterFailoverMaxFailures)
+	Properties.ClusterMaxVersionGap = getInt(v, "cluster.max_version_gap", Properties.ClusterMaxVersionGap)
+	Properties.ClusterSyncViaOss = getBool(v, "cluster.sync_via_oss", Properties.ClusterSyncViaOss)
+	Properties.ClusterSnapshotInterval = getInt(v, "cluster.snapshot_interval", Properties.ClusterSnapshotInterval)
+
+	Properties.OssEnabled = getBool(v, "oss.enabled", Properties.OssEnabled)
+	Properties.OssEndpoint = getStr(v, "oss.endpoint", Properties.OssEndpoint)
+	Properties.OssBucket = getStr(v, "oss.bucket", Properties.OssBucket)
+	Properties.OssAccessKeyID = getStr(v, "oss.access_key_id", Properties.OssAccessKeyID)
+	Properties.OssSecretAccessKey = getStr(v, "oss.secret_access_key", Properties.OssSecretAccessKey)
+	Properties.OssRegion = getStr(v, "oss.region", Properties.OssRegion)
+	Properties.OssPrefix = getStr(v, "oss.prefix", Properties.OssPrefix)
+	Properties.OssUseSSL = getBool(v, "oss.use_ssl", Properties.OssUseSSL)
+	Properties.OssForcePathStyle = getBool(v, "oss.force_path_style", Properties.OssForcePathStyle)
 
 	Properties.AzureEntraTenantID = getStr(v, "azure.entra_tenant_id", Properties.AzureEntraTenantID)
 	Properties.AzureEntraAppID = getStr(v, "azure.entra_app_id", Properties.AzureEntraAppID)
@@ -216,6 +300,22 @@ func populateFromViper(v *viper.Viper) {
 		}
 	}
 	_ = os.MkdirAll(Properties.DataDir, 0o755)
+	notifyReload()
+}
+
+var reloadHooks []func()
+
+// RegisterReloadHook registers a callback invoked after every config reload
+// (config-file change or nacos change). Used to react to runtime switches
+// such as enabling cluster mode on a running standalone node.
+func RegisterReloadHook(hook func()) {
+	reloadHooks = append(reloadHooks, hook)
+}
+
+func notifyReload() {
+	for _, hook := range reloadHooks {
+		hook()
+	}
 }
 
 func getStr(v *viper.Viper, key, def string) string {
@@ -273,8 +373,20 @@ func SetupConfigFromNacos(addr, namespaceId, group, dataId string) {
 		return
 	}
 	parseTomlContent(content)
+	nacosClient = configClient
+	nacosDataId = dataId
+	nacosGroup = group
+	nacosLastContent = content
 	loadNacosDynamicConfig(configClient, dataId, group)
 }
+
+var (
+	nacosClient      config_client.IConfigClient
+	nacosDataId      string
+	nacosGroup       string
+	nacosLastContent string
+)
+
 func loadNacosDynamicConfig(client config_client.IConfigClient, dataId, group string) {
 	// Watch for config changes from Nacos
 	err := client.ListenConfig(vo.ConfigParam{
@@ -282,6 +394,7 @@ func loadNacosDynamicConfig(client config_client.IConfigClient, dataId, group st
 		Group:  group,
 		OnChange: func(namespace, group, dataId, data string) {
 			slog.Info("nacos config changed, reloading")
+			nacosLastContent = data
 			parseTomlContent(data)
 		},
 	})
@@ -314,6 +427,86 @@ func GetTmpDir() string {
 		return "/tmp"
 	}
 	return Properties.Dir + "/tmp"
+}
+
+// WriteBackClusterID persists the auto-generated cluster id to the active
+// config source (config file when running file-based, Nacos otherwise) so
+// that later nodes can discover the cluster id. The id is written into the
+// [cluster] section under cluster_id.
+func WriteBackClusterID(id string) {
+	Properties.ClusterID = id
+	if nacosClient != nil {
+		content := nacosLastContent
+		if content == "" {
+			if got, err := nacosClient.GetConfig(vo.ConfigParam{DataId: nacosDataId, Group: nacosGroup}); err == nil {
+				content = got
+			}
+		}
+		patched := setTomlKey(content, "cluster", "cluster_id", id)
+		if patched != content {
+			if _, err := nacosClient.PublishConfig(vo.ConfigParam{
+				DataId:  nacosDataId,
+				Group:   nacosGroup,
+				Content: patched,
+			}); err != nil {
+				slog.Error("failed to publish cluster_id to nacos", "error", err)
+				return
+			}
+			nacosLastContent = patched
+			slog.Info("cluster_id written back to nacos", "cluster_id", id)
+		}
+		return
+	}
+	if configFilePath == "" {
+		return
+	}
+	bin, err := os.ReadFile(configFilePath)
+	if err != nil {
+		slog.Error("failed to read config file for cluster_id write-back", "error", err)
+		return
+	}
+	patched := setTomlKey(string(bin), "cluster", "cluster_id", id)
+	if err := os.WriteFile(configFilePath, []byte(patched), 0644); err != nil {
+		slog.Error("failed to write cluster_id to config file", "error", err)
+		return
+	}
+	slog.Info("cluster_id written back to config file", "path", configFilePath, "cluster_id", id)
+}
+
+// setTomlKey returns content with the key under section set to value. When
+// the section or key is absent it is appended, preserving all other content.
+func setTomlKey(content, section, key, value string) string {
+	sectionHeader := "[" + section + "]"
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines)+2)
+	inSection := false
+	found := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			if inSection && !found {
+				out = append(out, key+" = "+strconv.Quote(value))
+				found = true
+			}
+			inSection = trimmed == sectionHeader
+		} else if inSection {
+			kv := strings.SplitN(line, "=", 2)
+			if len(kv) == 2 && strings.TrimSpace(kv[0]) == key {
+				out = append(out, key+" = "+strconv.Quote(value))
+				found = true
+				continue
+			}
+		}
+		out = append(out, line)
+	}
+	if inSection && !found {
+		out = append(out, key+" = "+strconv.Quote(value))
+		found = true
+	}
+	if !found {
+		out = append(out, "", sectionHeader, key+" = "+strconv.Quote(value))
+	}
+	return strings.Join(out, "\n")
 }
 
 // DetectConfigFile finds the appropriate config file.

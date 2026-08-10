@@ -134,10 +134,95 @@ docker run -d --name godis \
 
 ### Cluster Mode (Multi-Node)
 
+Godis clusters are built with [hashicorp/raft](https://github.com/hashicorp/raft). Two operating modes are used:
+
+- **Master-slave mode (< 3 nodes)**: with fewer than 3 members a raft quorum cannot elect a new leader when a node dies, so nodes follow classic master-slave semantics. Replicas probe their master and promote themselves after the configured number of consecutive failures. Automatic failover is enabled by default.
+- **Raft mode (≥ 3 nodes)**: with 3 or more members the raft leader makes all membership, slot-routing and failover decisions.
+
+Health probing is deliberately loose to tolerate high-latency links: nodes probe each other every `cluster_heartbeat_interval` seconds (default **15s**) and a node is considered dead after `cluster_failover_max_failures` consecutive failed probes (default **10**). Both knobs live under the `[cluster]` section.
+
+Node-to-node data replication goes through an **OSS (S3-compatible) bucket** instead of direct port connections (set `cluster_sync_via_oss = true`). The master appends commands to a **WAL (write-ahead log)** — the same append-only stream as AOF — and uploads it to OSS as gzip-compressed, non-encrypted segments; replicas pull and replay those segments. Objects are **append-only** (no DELETE operations, keeping S3 costs low) and nodes tolerate a version gap of up to **3 major versions** (`cluster_max_version_gap`, default 3).
+
+**Hot-switch from standalone to cluster (no data loss, no dropped connections):**
+
+A node can start as a plain standalone server and switch to cluster mode at runtime without losing data or closing client connections:
+
+1. Start standalone: `CONFIG=config/standalone.toml ./godis &`
+2. Enable cluster mode by setting `[cluster] enable = true` (and `sync_via_oss = true` with a valid `[oss]` section) in the config file, or by pushing the same change to Nacos. Godis reloads the config, wraps the running server in a cluster, and swaps it in atomically — existing connections keep working, existing data is preserved.
+3. The first switched node auto-generates a **cluster_id** and writes it back to the config file (or publishes it to Nacos) under `[cluster] cluster_id`. Later nodes read that id from their own config so joins are validated and all OSS data lands under `{prefix}/{cluster_id}/`.
+
+**Start a 3-node cluster:**
+
 ```bash
-# Start a 3-node cluster
+# node1 — create the cluster (as_seed = true, only for the first node)
 CONFIG=config/cluster.toml ./godis &
+# node2, node3 — join via any existing node's Redis address
+#   seed = "127.0.0.1:6379"
+#   raft_listen_address = "0.0.0.0:16667"   # unique per node
+#   cluster_id = "<same id as node1>"
+CONFIG=config/cluster-node2.toml ./godis &
+CONFIG=config/cluster-node3.toml ./godis &
 ```
+
+**Join over HTTP instead of TCP (both transports are supported):**
+
+A joining node can send its cluster-join handshake through the seed's HTTP API (port `63790`) instead of the seed's Redis port. Every node already exposes `POST /api/cluster/join`, so an operator can also register a node manually:
+
+```bash
+# node2 config: join_http = "127.0.0.1:63790" (seed's HTTP API) instead of seed
+#   join_http = "127.0.0.1:63790"
+#   join_http_token = "<token>"   # only when the seed has a password
+CONFIG=config/cluster-node2.toml ./godis &
+
+# or register a node manually (from any machine):
+curl -X POST http://127.0.0.1:63790/api/cluster/join \
+  -H 'Content-Type: application/json' \
+  -d '{"cluster_id":"<id>","redis_addr":"127.0.0.1:6390","raft_addr":"127.0.0.1:16667"}'
+
+# inspect live cluster state:
+curl http://127.0.0.1:63790/api/cluster/status
+```
+
+The HTTP path performs the exact same raft join as the TCP path — the seed's web server forwards the handshake to its local godis node, so membership, OSS sync and failover behavior are identical.
+
+**Start a 2-node master-slave cluster:**
+
+```bash
+# node1 — master (as_seed = true)
+CONFIG=config/cluster.toml ./godis &
+# node2 — replica of node1
+#   seed = "127.0.0.1:6379"
+#   master_in_cluster = "127.0.0.1:6379"
+CONFIG=config/cluster-node2.toml ./godis &
+```
+
+Minimal `[cluster]` / `[oss]` config for cluster mode:
+
+```toml
+[cluster]
+enable = true
+# cluster_id = "..."                 # set on joining nodes (seed writes it back)
+# as_seed = true                     # first node only
+# seed = "127.0.0.1:6379"            # join address for non-seed nodes
+# raft_listen_address = "0.0.0.0:16666"
+# master_in_cluster = "127.0.0.1:6379"
+sync_via_oss = true
+
+[oss]
+enabled = true
+endpoint = "127.0.0.1:9000"          # e.g. MinIO endpoint
+access_key_id = "minioadmin"
+secret_access_key = "minioadmin"
+bucket = "godis-cluster"
+use_ssl = false
+force_path_style = true              # required for MinIO
+```
+
+When OSS is unavailable or disabled, nodes fall back to direct TCP replication (legacy behavior).
+
+**Disaster recovery.** A background goroutine watches the OSS state markers (one small object per node, holding the highest WAL seq each node applied). When a master dies in **raft mode (≥ 3 nodes)** the raft leader re-elects a new master. When the cluster shrinks below 3 nodes, survivors pick the node with the newest applied data by comparing marker metadata and restore it as the new master — no manual intervention needed.
+
+**Cluster metrics on `:9121`.** With `prometheus_enabled = true`, the `/metrics` endpoint exposes `godis_cluster_enabled`, `godis_cluster_mode` (`raft`/`master-slave`), `godis_cluster_role` (`master`/`slave`), `godis_cluster_master_info{master_id, master_addr}`, `godis_cluster_node_count`, `godis_cluster_wal_seq_applied` / `godis_cluster_wal_seq_published`, `godis_cluster_sync_last_success` / `godis_cluster_sync_lag_seconds` and WAL upload/download durations — enough to pinpoint the master and measure replication lag.
 
 Connect to any node to access the full dataset:
 
