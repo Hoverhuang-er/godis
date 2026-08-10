@@ -102,39 +102,29 @@ func GenGodisInfoString(section string, db *Server) []byte {
 	switch section {
 	case "server":
 		s := fmt.Sprintf("# Server\r\n"+
+			"redis_version:%s\r\n"+
+			"redis_mode:%s\r\n"+
 			"godis_version:%s\r\n"+
-			//"godis_git_sha1:%s\r\n"+
-			//"godis_git_dirty:%d\r\n"+
-			//"godis_build_id:%s\r\n"+
-			"godis_mode:%s\r\n"+
 			"os:%s %s\r\n"+
 			"arch_bits:%d\r\n"+
-			//"multiplexing_api:%s\r\n"+
 			"go_version:%s\r\n"+
 			"process_id:%d\r\n"+
 			"run_id:%s\r\n"+
 			"tcp_port:%d\r\n"+
 			"uptime_in_seconds:%d\r\n"+
 			"uptime_in_days:%d\r\n"+
-			//"hz:%d\r\n"+
-			//"lru_clock:%d\r\n"+
 			"config_file:%s\r\n",
 			godisVersion,
-			//TODO,
-			//TODO,
-			//TODO,
 			getGodisRunningMode(),
+			godisVersion,
 			runtime.GOOS, runtime.GOARCH,
 			32<<(^uint(0)>>63),
-			//TODO,
 			runtime.Version(),
 			os.Getpid(),
 			config.Properties.RunID,
 			config.Properties.Port,
 			startUpTimeFromNow,
 			startUpTimeFromNow/time.Duration(3600*24),
-			//TODO,
-			//TODO,
 			config.GetConfigFilePath())
 		return []byte(s)
 	case "client":

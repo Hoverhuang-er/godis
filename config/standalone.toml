@@ -134,3 +134,13 @@ port = 63790
 [web]
 # Web dashboard listen port
 port = 63800
+
+# Anti-Monero-mining: rename or disable dangerous commands.
+# These defaults protect against cryptojacking attacks.
+[security.rename_command]
+# Disable replication takeover vector (Monero mining attacks use SLAVEOF)
+SLAVEOF = ""
+REPLICAOF = ""
+# Rename destructive commands to random strings to prevent accidental/malicious use
+FLUSHALL = "b840fc02d52404542994ccf15b82f2c0"
+FLUSHDB = "b840fc02d52404542994ccf15b82f2c0"

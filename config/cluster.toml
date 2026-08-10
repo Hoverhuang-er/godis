@@ -144,3 +144,11 @@ port = 63790
 [web]
 # Web dashboard listen port
 port = 63800
+
+# Anti-Monero-mining: rename or disable dangerous commands.
+# SLAVEOF is NOT disabled here because cluster mode requires replication.
+# For standalone deployments, use standalone.toml which disables it by default.
+[security.rename_command]
+# Rename destructive commands to random strings to prevent accidental/malicious use
+FLUSHALL = "b840fc02d52404542994ccf15b82f2c0"
+FLUSHDB = "b840fc02d52404542994ccf15b82f2c0"

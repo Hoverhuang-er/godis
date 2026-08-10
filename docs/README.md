@@ -494,6 +494,51 @@ Any unrecognized command type is passed through as-is with positional arguments 
 | Web Dashboard | `63800` | `[web]` | `port` |
 | Prometheus Metrics | `9121` | `[monitoring]` | `prometheus_port` |
 
+### Anti-Monero Mining Protection
+
+Godis includes built-in defenses against Monero cryptojacking attacks, which are
+the most common Redis security threat in production. These protections are
+**enabled by default** and require no configuration.
+
+#### Threat Model
+
+Monero miners typically exploit Redis through two vectors:
+
+1. **SLAVEOF/REPLICAOF replication takeover** — attacker makes your Redis a
+   replica of their malicious instance, injecting crontab entries or mining
+   payloads via the replication stream
+2. **CONFIG SET + BGSAVE crontab injection** — attacker sets `dbfilename` to
+   `/var/spool/cron/crontabs/root` and triggers a save to achieve RCE
+
+#### Built-in Defenses
+
+| Defense | Mechanism | Default |
+|---------|-----------|---------|
+| **SLAVEOF blocking (standalone)** | `SLAVEOF <host> <port>` rejected in standalone mode. `SLAVEOF NO ONE` still works. Cluster mode allows it (required for replication). | ✅ On |
+| **Crontab path detection** | AOF/RDB filenames containing `/var/spool/cron`, `/etc/cron`, `/tmp/`, or `crontab` are silently reset to safe defaults | ✅ On |
+| **Command renaming** | `rename-command` support to disable or rename dangerous commands. Defaults rename `FLUSHALL`/`FLUSHDB` to random strings and disable `SLAVEOF`/`REPLICAOF` in standalone mode | ✅ On |
+| **Protected commands** | `CONFIG SET` is not implemented in Godis, eliminating the primary crontab-injection vector | ✅ Inherent |
+
+#### Configuration
+
+The `rename-command` mechanism works identically to Redis:
+
+```toml
+[security.rename_command]
+# Disable a command entirely (set to empty string)
+SLAVEOF = ""
+
+# Rename a command (use the new name to invoke it)
+FLUSHALL = "b840fc02d52404542994ccf15b82f2c0"
+```
+
+To allow `SLAVEOF` in standalone mode (e.g., for manual replication setup),
+remove it from `[security.rename_command]` or set it to a new name.
+
+> **Note**: Cluster mode (`cluster.toml`) does **not** disable `SLAVEOF` by
+> default, as replication is required for cluster operation. The anti-mining
+> SLAVEOF check in `execSlaveOf()` is only active in standalone mode.
+
 ## Kubernetes Deployment
 
 ### Helm Chart (Recommended)
