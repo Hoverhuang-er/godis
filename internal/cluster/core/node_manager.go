@@ -229,7 +229,19 @@ func (cluster *Cluster) makeRebalancePlan() ([]*raft.MigratingTask, error) {
 			if len(exportSlots) == 0 {
 				exportNodeSlots := fsm.Node2Slot[exportNode]
 				exportCount := len(exportNodeSlots) - avgSlot
-				exportSlots = exportNodeSlots[0:exportCount]
+				for _, s := range exportNodeSlots {
+					if s == confSlotID {
+						continue // conf namespace slot never migrates
+					}
+					exportSlots = append(exportSlots, s)
+					if len(exportSlots) >= exportCount {
+						break
+					}
+				}
+				if len(exportSlots) == 0 {
+					exportIndex++
+					continue
+				}
 			}
 			importNode := importingNodes[importIndex]
 			importNodeCurrentIndex := fsm.Node2Slot[importNode]

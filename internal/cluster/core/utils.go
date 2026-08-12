@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	dbimpl "github.com/Hoverhuang-er/godis/internal/database"
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
 	"github.com/Hoverhuang-er/godis/internal/redis/connection"
@@ -86,6 +87,9 @@ func GetPartitionKey(key string) string {
 
 func defaultGetSlotImpl(cluster *Cluster, key string) uint32 {
 	partitionKey := GetPartitionKey(key)
+	if dbimpl.IsConfKey(partitionKey) {
+		return confSlotID
+	}
 	return crc32.ChecksumIEEE([]byte(partitionKey)) % uint32(SlotCount)
 }
 
