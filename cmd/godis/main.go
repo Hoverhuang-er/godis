@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -63,8 +64,23 @@ func bootstrapConfNamespace(db idatabase.DB) {
 		d.BootstrapConfNamespace()
 	}
 }
+
+// parseJoinFlag extracts the --join <addr> / --join=<addr> target from the
+// command line. Returns "" when absent.
+func parseJoinFlag(args []string) string {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--join" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if len(args[i]) > len("--join=") && args[i][:len("--join=")] == "--join=" {
+			return args[i][len("--join="):]
+		}
+	}
+	return ""
+}
 func main() {
 	// Check for hidden flags before any other setup
+	joinTarget := parseJoinFlag(os.Args[1:])
 	for _, arg := range os.Args[1:] {
 		if arg == "--cli" {
 			runCLI()
@@ -108,6 +124,22 @@ func main() {
 			config.SetupConfig(configFilename)
 		} else {
 			config.Properties = defaultProperties
+		}
+	}
+	// --join: switch this node into cluster mode and join the given seed.
+	// host:port uses the TCP join channel; http(s)://host:port uses the
+	// seed's HTTP API. The seed auto-promotes on receiving the join.
+	if joinTarget != "" {
+		config.Properties.ClusterEnable = true
+		switch {
+		case strings.HasPrefix(joinTarget, "http://"):
+			config.Properties.ClusterJoinHTTP = strings.TrimPrefix(joinTarget, "http://")
+		case strings.HasPrefix(joinTarget, "https://"):
+			// ponytail: httpJoinCluster hardcodes http://; https joins
+			// work only if the seed terminates TLS in front of the API.
+			config.Properties.ClusterJoinHTTP = strings.TrimPrefix(joinTarget, "https://")
+		default:
+			config.Properties.ClusterSeed = joinTarget
 		}
 	}
 	listenAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
