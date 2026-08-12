@@ -261,6 +261,8 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 			return protocol.MakeArgNumErrReply("copy")
 		}
 		return execCopy(server, c, cmdLine[1:])
+	} else if cmdName == "config" {
+		return execConfig(server, c, cmdLine[1:])
 	} else if cmdName == "replconf" {
 		return server.execReplConf(c, cmdLine[1:])
 	} else if cmdName == "psync" {
