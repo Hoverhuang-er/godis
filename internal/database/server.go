@@ -267,6 +267,8 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 		return server.execReplConf(c, cmdLine[1:])
 	} else if cmdName == "psync" {
 		return server.execPSync(c, cmdLine[1:])
+	} else if cmdName == "cluster.join" && clusterJoinHandler != nil {
+		return clusterJoinHandler(c, cmdLine)
 	}
 
 	// normal commands

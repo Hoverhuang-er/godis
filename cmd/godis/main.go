@@ -179,6 +179,7 @@ func main() {
 		srv := gnet.NewGnetServer(db)
 
 		cluster.RegisterHotSwitch(srv)
+		cluster.RegisterJoinIntercept(srv)
 
 		if config.Properties.HttpApiEnabled {
 			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))
@@ -193,6 +194,7 @@ func main() {
 		bootstrapConfNamespace(handler.CurrentDB())
 
 		cluster.RegisterHotSwitch(handler)
+		cluster.RegisterJoinIntercept(handler)
 
 		if config.Properties.HttpApiEnabled {
 			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))
