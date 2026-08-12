@@ -84,6 +84,15 @@ func (c *Cluster) SelfID() string {
 	return c.raftNode.Cfg.ID()
 }
 
+// BootstrapConfNamespace writes the wrapped server's shared settings into
+// the conf namespace (used when the cluster created its own standalone
+// server).
+func (c *Cluster) BootstrapConfNamespace() {
+	if srv, ok := c.db.(*dbimpl.Server); ok {
+		dbimpl.BootstrapConfNamespace(srv)
+	}
+}
+
 // ClusterStats returns the current cluster state for the /metrics endpoint.
 // Standalone nodes report Enabled=false and the empty mode.
 func (c *Cluster) ClusterStats() monitoring.ClusterStats {

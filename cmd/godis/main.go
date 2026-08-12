@@ -52,6 +52,17 @@ func fileExists(filename string) bool {
 	info, err := os.Stat(filename)
 	return err == nil && !info.IsDir()
 }
+
+// bootstrapConfNamespace writes the shared local config into the conf
+// namespace of whatever engine is active (standalone server or cluster).
+func bootstrapConfNamespace(db idatabase.DB) {
+	switch d := db.(type) {
+	case *database.Server:
+		database.BootstrapConfNamespace(d)
+	case *cluster.Cluster:
+		d.BootstrapConfNamespace()
+	}
+}
 func main() {
 	// Check for hidden flags before any other setup
 	for _, arg := range os.Args[1:] {
@@ -131,6 +142,7 @@ func main() {
 		} else {
 			db = database.NewStandaloneServer()
 		}
+		bootstrapConfNamespace(db)
 		shutdownDB = db
 		srv := gnet.NewGnetServer(db)
 
@@ -146,6 +158,7 @@ func main() {
 		go func() { _ = srv.Run(listenAddr) }()
 	} else {
 		handler := stdserver.MakeHandler()
+		bootstrapConfNamespace(handler.CurrentDB())
 
 		cluster.RegisterHotSwitch(handler)
 

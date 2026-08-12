@@ -1,8 +1,10 @@
 package database
 
 import (
+	"os"
 	"testing"
 
+	"github.com/Hoverhuang-er/godis/internal/config"
 	"github.com/Hoverhuang-er/godis/internal/interface/database"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
 	"github.com/Hoverhuang-er/godis/internal/redis/connection"
@@ -102,4 +104,39 @@ func TestDBSizeExcludesConfKeys(t *testing.T) {
 
 	ret := server.Exec(conn, utils.ToCmdLine("DBSIZE"))
 	asserts.AssertIntReply(t, ret, 1)
+}
+
+func TestBootstrapConfNamespace(t *testing.T) {
+	config.Properties.AppendOnly = true
+	config.Properties.RequirePass = "pw"
+	config.Properties.Dir = t.TempDir()
+	config.Properties.DataDir = t.TempDir()
+	aofFile, err := os.CreateTemp(t.TempDir(), "bootstrap-*.aof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(aofFile.Name())
+	config.Properties.AppendFilename = aofFile.Name()
+	defer func() {
+		config.Properties.AppendOnly = false
+		config.Properties.RequirePass = ""
+	}()
+	server := NewStandaloneServer()
+	BootstrapConfNamespace(server)
+	db := server.mustSelectDB(0)
+	if raw, ok := db.GetEntity("conf:appendonly"); !ok || string(raw.Data.([]byte)) != "true" {
+		t.Fatalf("conf:appendonly not bootstrapped: %v %v", ok, raw)
+	}
+	if raw, ok := db.GetEntity("conf:requirepass"); !ok || string(raw.Data.([]byte)) != "pw" {
+		t.Fatalf("conf:requirepass not bootstrapped")
+	}
+	if _, ok := db.GetEntity("conf:bind"); ok {
+		t.Fatal("node-local param bootstrapped into namespace")
+	}
+	// existing conf keys are never overwritten (conf key wins on later boots)
+	db.PutEntity("conf:appendonly", &database.DataEntity{Data: []byte("false")})
+	BootstrapConfNamespace(server)
+	if raw, _ := db.GetEntity("conf:appendonly"); string(raw.Data.([]byte)) != "false" {
+		t.Fatal("bootstrap overwrote existing conf key")
+	}
 }
