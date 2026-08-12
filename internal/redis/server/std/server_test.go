@@ -10,14 +10,13 @@ import (
 
 func TestListenAndServe(t *testing.T) {
 	var err error
-	closeChan := make(chan struct{})
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	addr := listener.Addr().String()
-	go tcp.ListenAndServe(listener, MakeHandler(), closeChan)
+	go tcp.ListenAndServe(listener, MakeHandler())
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -39,6 +38,6 @@ func TestListenAndServe(t *testing.T) {
 		t.Error("get wrong response")
 		return
 	}
-	closeChan <- struct{}{}
+	_ = listener.Close()
 	time.Sleep(time.Second)
 }

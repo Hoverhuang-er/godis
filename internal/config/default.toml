@@ -91,3 +91,16 @@ port = 63790
 [web]
 # Web dashboard listen port
 port = 63800
+
+[sentinel]
+# Sentinel mode: expose the SENTINEL command surface for failover of
+# externally-monitored masters (e.g. redis-py / lettuce clients).
+enable = false
+port = 26379
+
+# [[sentinel.monitors]]
+# name = "mymaster"
+# host = "127.0.0.1"
+# port = 6379
+# quorum = 1
+# down_after_ms = 30000

@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	jsonv2 "encoding/json/v2"
+	"encoding/json"
 
 	"github.com/hashicorp/raft"
 )
@@ -124,7 +124,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			SlotCount: 3,
 		},
 	}
-	data, _ := jsonv2.Marshal(entry)
+	data, _ := json.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 
 	//EventStartMigrate
@@ -137,7 +137,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			Slots:      []uint32{1, 2},
 		},
 	}
-	data, _ = jsonv2.Marshal(entry)
+	data, _ = json.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 
 	//EventFinishMigrate
@@ -150,7 +150,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			Slots:      []uint32{1, 2},
 		},
 	}
-	data, _ = jsonv2.Marshal(entry)
+	data, _ = json.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 
 	//EventFinishFailover
@@ -163,7 +163,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			NewMasterId: "node2",
 		},
 	}
-	data, _ = jsonv2.Marshal(entry)
+	data, _ = json.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 
 	//EventJoin
@@ -174,7 +174,7 @@ func TestFSMApplyEvents(t *testing.T) {
 			Master: "node2",
 		},
 	}
-	data, _ = jsonv2.Marshal(entry)
+	data, _ = json.Marshal(entry)
 	fsm.Apply(&raft.Log{Data: data})
 }
 
@@ -241,6 +241,59 @@ func TestFSMUtils(t *testing.T) {
 	fsm.failover("node1", "node2")
 	fsm.addNode("node3", "node1")
 	_ = fsm.GetMaster("node2")
+}
+
+// TestFSMFailoverUnknownMaster is a regression test for the nil-pointer panic
+// seen in E2E: fsm.failover with an oldMasterId that has no MasterSlaves
+// record (e.g. an already-failed-over, evicted, or ghost node) used to panic
+// dereferencing fsm.MasterSlaves[oldMasterId].Slaves.
+func TestFSMFailoverUnknownMaster(t *testing.T) {
+	fsm := &FSM{
+		Node2Slot:    map[string][]uint32{"node1": {0, 1, 2}},
+		Slot2Node:    map[uint32]string{0: "node1", 1: "node1", 2: "node1"},
+		Migratings:   make(map[string]*MigratingTask),
+		MasterSlaves: map[string]*MasterSlave{"node1": {MasterId: "node1", Slaves: []string{"node2"}}},
+		SlaveMasters: map[string]string{"node2": "node1"},
+		Failovers:    make(map[string]*FailoverTask),
+	}
+
+	fsm.failover("ghost-master", "node2")
+	fsm.failover("ghost-master", "node2")
+	fsm.failover("node1", "node2")
+	if got := fsm.GetMaster("node1"); got != "node2" {
+		t.Errorf("node1 should now follow node2, got %q", got)
+	}
+	if ms := fsm.MasterSlaves["node2"]; ms == nil || ms.MasterId != "node2" {
+		t.Errorf("node2 should be the new master, got %+v", ms)
+	}
+}
+
+// TestFSMApplyFinishFailoverUnknownMaster is a regression test for the same
+// panic reached through the raft Apply path with a committed
+// EventFinishFailover whose old master is unknown to the FSM.
+func TestFSMApplyFinishFailoverUnknownMaster(t *testing.T) {
+	fsm := &FSM{
+		Node2Slot:    map[string][]uint32{"node1": {0}},
+		Slot2Node:    map[uint32]string{0: "node1"},
+		Migratings:   make(map[string]*MigratingTask),
+		MasterSlaves: map[string]*MasterSlave{"node1": {MasterId: "node1"}},
+		SlaveMasters: make(map[string]string),
+		Failovers:    make(map[string]*FailoverTask),
+	}
+	entry := &LogEntry{
+		Event: EventFinishFailover,
+		FailoverTask: &FailoverTask{
+			ID:          "f-ghost",
+			OldMasterId: "ghost-master",
+			NewMasterId: "node2",
+		},
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	// must not panic
+	fsm.Apply(&raft.Log{Data: data})
 }
 
 func TestUtils(t *testing.T) {

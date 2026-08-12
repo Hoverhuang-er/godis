@@ -28,7 +28,7 @@ func Ping(c redis.Connection, args [][]byte) redis.Reply {
 // Info the information of the godis server returned by the INFO command
 func Info(db *Server, args [][]byte) redis.Reply {
 	if len(args) == 0 {
-		infoCommandList := [...]string{"server", "client", "cluster", "keyspace"}
+		infoCommandList := [...]string{"server", "client", "replication", "cluster", "keyspace"}
 		var allSection []byte
 		for _, s := range infoCommandList {
 			allSection = append(allSection, GenGodisInfoString(s, db)...)
@@ -42,6 +42,8 @@ func Info(db *Server, args [][]byte) redis.Reply {
 			return protocol.MakeBulkReply(reply)
 		case "client":
 			return protocol.MakeBulkReply(GenGodisInfoString("client", db))
+		case "replication":
+			return protocol.MakeBulkReply(GenGodisInfoString("replication", db))
 		case "cluster":
 			return protocol.MakeBulkReply(GenGodisInfoString("cluster", db))
 		case "keyspace":

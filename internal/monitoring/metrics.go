@@ -39,6 +39,21 @@ type Metrics struct {
 	keyspaceMisses   atomic.Int64
 	currConnections  atomic.Int64
 
+	// Production-grade counters (godis_* namespace, dashboard 15286 aligned)
+	netInputBytes       atomic.Int64
+	netOutputBytes      atomic.Int64
+	rejectedConns       atomic.Int64
+	partialResync       atomic.Int64
+	partialResyncDenied atomic.Int64
+	fullResyncs         atomic.Int64
+	slowLogCount        atomic.Int64
+	expiredKeys         atomic.Int64
+	evictedKeys         atomic.Int64
+
+	// Command latency histogram (godis_commands_duration_seconds)
+	cmdDurationMu sync.Mutex
+	cmdDurations  map[string]*durationBucket
+
 	// Ops per second tracking
 	opsLastSec int64
 	opsCount   int64
@@ -51,6 +66,9 @@ type Metrics struct {
 	// Cluster stats callback, registered when this node runs cluster mode
 	clusterStatsFn func() ClusterStats
 
+	// Replication stats callback, registered by the database layer
+	replStatsFn func() ReplStats
+
 	// Big key tracking
 	bigKeysMu sync.RWMutex
 	bigKeys   []BigKeyInfo
@@ -58,6 +76,29 @@ type Metrics struct {
 	// Hot key tracking (key -> access count)
 	hotKeysMu   sync.RWMutex
 	hotKeyCount map[string]int64
+}
+
+// durationBucket accumulates command latency observations.
+type durationBucket struct {
+	count   int64
+	sumNsec int64
+}
+
+// ReplStats is a snapshot of replication state scraped for /metrics.
+type ReplStats struct {
+	Role            string // master, slave
+	ConnectedSlaves int
+	MasterLinkUp    bool
+	ReplOffset      int64
+	BacklogLen      int64
+	SlaveLags       []SlaveLag // per-connected-slave lag, master only
+}
+
+// SlaveLag describes the replication lag of one connected slave.
+type SlaveLag struct {
+	IP         string
+	Port       int
+	LagSeconds float64
 }
 
 // DBStat holds keys/expires count for one database.
@@ -103,9 +144,10 @@ type HotKeyInfo struct {
 // New creates a Metrics instance.
 func New(dbStatsFn func() []DBStat) *Metrics {
 	m := &Metrics{
-		startTime:   time.Now(),
-		dbStatsFn:   dbStatsFn,
-		hotKeyCount: make(map[string]int64),
+		startTime:    time.Now(),
+		dbStatsFn:    dbStatsFn,
+		hotKeyCount:  make(map[string]int64),
+		cmdDurations: make(map[string]*durationBucket),
 	}
 	go m.tickLoop()
 	go m.hotKeyResetLoop()
@@ -117,6 +159,34 @@ func New(dbStatsFn func() []DBStat) *Metrics {
 func (m *Metrics) SetClusterStatsFn(fn func() ClusterStats) {
 	m.clusterStatsFn = fn
 }
+
+// SetReplStatsFn registers the callback providing replication stats.
+func (m *Metrics) SetReplStatsFn(fn func() ReplStats) {
+	m.replStatsFn = fn
+}
+
+// RecordCommandDuration observes the execution latency of a command.
+func (m *Metrics) RecordCommandDuration(cmdName string, dur time.Duration) {
+	m.cmdDurationMu.Lock()
+	b := m.cmdDurations[cmdName]
+	if b == nil {
+		b = &durationBucket{}
+		m.cmdDurations[cmdName] = b
+	}
+	b.count++
+	b.sumNsec += dur.Nanoseconds()
+	m.cmdDurationMu.Unlock()
+}
+
+func (m *Metrics) IncrNetInputBytes(n int64)  { m.netInputBytes.Add(n) }
+func (m *Metrics) IncrNetOutputBytes(n int64) { m.netOutputBytes.Add(n) }
+func (m *Metrics) IncrRejectedConnections()   { m.rejectedConns.Add(1) }
+func (m *Metrics) IncrPartialResync()         { m.partialResync.Add(1) }
+func (m *Metrics) IncrPartialResyncDenied()   { m.partialResyncDenied.Add(1) }
+func (m *Metrics) IncrFullResyncs()           { m.fullResyncs.Add(1) }
+func (m *Metrics) IncrSlowLog()               { m.slowLogCount.Add(1) }
+func (m *Metrics) IncrExpiredKeys()           { m.expiredKeys.Add(1) }
+func (m *Metrics) IncrEvictedKeys()           { m.evictedKeys.Add(1) }
 
 func (m *Metrics) tickLoop() {
 	for {
@@ -305,6 +375,192 @@ func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, hk := range sorted {
 		fmt.Fprintf(w, "redis_hot_key_info{key=\"%s\"} %d\n", hk.key, hk.count)
 	}
+
+	// ---- Replication metrics (godis_* , dashboard 15286 aligned) ----
+	if m.replStatsFn != nil {
+		rs := m.replStatsFn()
+		fmt.Fprintf(w, "# HELP godis_connected_slaves Number of connected replicas\n")
+		fmt.Fprintf(w, "# TYPE godis_connected_slaves gauge\n")
+		fmt.Fprintf(w, "godis_connected_slaves %d\n", rs.ConnectedSlaves)
+
+		fmt.Fprintf(w, "# HELP godis_master_link_up Whether the link to master is up (slave only)\n")
+		fmt.Fprintf(w, "# TYPE godis_master_link_up gauge\n")
+		link := 0
+		if rs.MasterLinkUp {
+			link = 1
+		}
+		fmt.Fprintf(w, "godis_master_link_up %d\n", link)
+
+		fmt.Fprintf(w, "# HELP godis_master_repl_offset Master replication offset\n")
+		fmt.Fprintf(w, "# TYPE godis_master_repl_offset gauge\n")
+		fmt.Fprintf(w, "godis_master_repl_offset %d\n", rs.ReplOffset)
+
+		fmt.Fprintf(w, "# HELP godis_repl_backlog_len Length of the replication backlog window\n")
+		fmt.Fprintf(w, "# TYPE godis_repl_backlog_len gauge\n")
+		fmt.Fprintf(w, "godis_repl_backlog_len %d\n", rs.BacklogLen)
+	}
+
+	fmt.Fprintf(w, "# HELP godis_replica_partial_resync_accepted_total Accepted partial resyncs\n")
+	fmt.Fprintf(w, "# TYPE godis_replica_partial_resync_accepted_total counter\n")
+	fmt.Fprintf(w, "godis_replica_partial_resync_accepted_total %d\n", m.partialResync.Load())
+
+	fmt.Fprintf(w, "# HELP godis_replica_resyncs_full_total Full resyncs served\n")
+	fmt.Fprintf(w, "# TYPE godis_replica_resyncs_full_total counter\n")
+	fmt.Fprintf(w, "godis_replica_resyncs_full_total %d\n", m.fullResyncs.Load())
+
+	// ---- Production metrics (godis_* , dashboard 15286 aligned) ----
+	fmt.Fprintf(w, "# HELP godis_commands_total Total commands processed\n")
+	fmt.Fprintf(w, "# TYPE godis_commands_total counter\n")
+	fmt.Fprintf(w, "godis_commands_total %d\n", m.totalCommands.Load())
+
+	fmt.Fprintf(w, "# HELP godis_commands_duration_seconds_total Cumulative command execution time\n")
+	fmt.Fprintf(w, "# TYPE godis_commands_duration_seconds_total counter\n")
+	m.cmdDurationMu.Lock()
+	for name, b := range m.cmdDurations {
+		fmt.Fprintf(w, "godis_commands_duration_seconds_total{cmd=\"%s\"} %v\n",
+			sanitizeLabel(name), float64(b.sumNsec)/1e9)
+	}
+	m.cmdDurationMu.Unlock()
+
+	fmt.Fprintf(w, "# HELP godis_net_input_bytes_total Total bytes received from clients\n")
+	fmt.Fprintf(w, "# TYPE godis_net_input_bytes_total counter\n")
+	fmt.Fprintf(w, "godis_net_input_bytes_total %d\n", m.netInputBytes.Load())
+
+	fmt.Fprintf(w, "# HELP godis_net_output_bytes_total Total bytes sent to clients\n")
+	fmt.Fprintf(w, "# TYPE godis_net_output_bytes_total counter\n")
+	fmt.Fprintf(w, "godis_net_output_bytes_total %d\n", m.netOutputBytes.Load())
+
+	fmt.Fprintf(w, "# HELP godis_rejected_connections_total Rejected connections\n")
+	fmt.Fprintf(w, "# TYPE godis_rejected_connections_total counter\n")
+	fmt.Fprintf(w, "godis_rejected_connections_total %d\n", m.rejectedConns.Load())
+
+	fmt.Fprintf(w, "# HELP godis_expired_keys_total Keys expired\n")
+	fmt.Fprintf(w, "# TYPE godis_expired_keys_total counter\n")
+	fmt.Fprintf(w, "godis_expired_keys_total %d\n", m.expiredKeys.Load())
+
+	fmt.Fprintf(w, "# HELP godis_evicted_keys_total Keys evicted\n")
+	fmt.Fprintf(w, "# TYPE godis_evicted_keys_total counter\n")
+	fmt.Fprintf(w, "godis_evicted_keys_total %d\n", m.evictedKeys.Load())
+
+	fmt.Fprintf(w, "# HELP godis_slowlog_count Total slow queries logged\n")
+	fmt.Fprintf(w, "# TYPE godis_slowlog_count counter\n")
+	fmt.Fprintf(w, "godis_slowlog_count %d\n", m.slowLogCount.Load())
+
+	// ---- Kvrocks dashboard 15286 compatible metrics ----
+	// Alias the production metrics under the kvrocks_* names that the
+	// upstream Grafana dashboard (Kvrocks 15286) queries, so it can be
+	// imported unchanged against a godis scrape target.
+	cpuSys, cpuUser := cpuSeconds()
+	fmt.Fprintf(w, "# HELP kvrocks_uptime_in_seconds Server uptime\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_uptime_in_seconds gauge\n")
+	fmt.Fprintf(w, "kvrocks_uptime_in_seconds %d\n", uptime)
+
+	fmt.Fprintf(w, "# HELP kvrocks_cpu_sys_seconds_total System CPU seconds\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_cpu_sys_seconds_total counter\n")
+	fmt.Fprintf(w, "kvrocks_cpu_sys_seconds_total %v\n", cpuSys)
+	fmt.Fprintf(w, "# HELP kvrocks_cpu_user_seconds_total User CPU seconds\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_cpu_user_seconds_total counter\n")
+	fmt.Fprintf(w, "kvrocks_cpu_user_seconds_total %v\n", cpuUser)
+
+	usedDisk, diskCapacity := diskUsage(config.Properties.DataDir)
+	fmt.Fprintf(w, "# HELP kvrocks_used_disk_size Used disk space in bytes\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_used_disk_size gauge\n")
+	fmt.Fprintf(w, "kvrocks_used_disk_size %d\n", usedDisk)
+	fmt.Fprintf(w, "# HELP kvrocks_disk_capacity_bytes Disk capacity in bytes\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_disk_capacity_bytes gauge\n")
+	fmt.Fprintf(w, "kvrocks_disk_capacity_bytes %d\n", diskCapacity)
+
+	fmt.Fprintf(w, "# HELP kvrocks_used_db_size In-memory database size in bytes\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_used_db_size gauge\n")
+	fmt.Fprintf(w, "kvrocks_used_db_size %d\n", memStats.Alloc)
+
+	fmt.Fprintf(w, "# HELP kvrocks_connected_clients Number of connected clients\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_connected_clients gauge\n")
+	fmt.Fprintf(w, "kvrocks_connected_clients %d\n", m.currConnections.Load())
+
+	fmt.Fprintf(w, "# HELP kvrocks_monitor_clients Number of MONITOR clients\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_monitor_clients gauge\n")
+	fmt.Fprintf(w, "kvrocks_monitor_clients 0\n")
+
+	fmt.Fprintf(w, "# HELP kvrocks_loading Whether the server is loading data\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_loading gauge\n")
+	fmt.Fprintf(w, "kvrocks_loading 0\n")
+
+	if m.replStatsFn != nil {
+		rs := m.replStatsFn()
+		fmt.Fprintf(w, "# HELP kvrocks_connected_slaves Number of connected replicas\n")
+		fmt.Fprintf(w, "# TYPE kvrocks_connected_slaves gauge\n")
+		fmt.Fprintf(w, "kvrocks_connected_slaves %d\n", rs.ConnectedSlaves)
+
+		fmt.Fprintf(w, "# HELP kvrocks_instance_info Server role information\n")
+		fmt.Fprintf(w, "# TYPE kvrocks_instance_info gauge\n")
+		fmt.Fprintf(w, "kvrocks_instance_info{role=\"%s\"} 1\n", rs.Role)
+
+		fmt.Fprintf(w, "# HELP kvrocks_connected_slave_lag_seconds Replication lag per connected slave\n")
+		fmt.Fprintf(w, "# TYPE kvrocks_connected_slave_lag_seconds gauge\n")
+		for _, sl := range rs.SlaveLags {
+			fmt.Fprintf(w, "kvrocks_connected_slave_lag_seconds{slave_ip=\"%s\",slave_port=\"%d\"} %v\n",
+				sanitizeLabel(sl.IP), sl.Port, sl.LagSeconds)
+		}
+	}
+
+	fmt.Fprintf(w, "# HELP kvrocks_commands_total Commands processed per command name\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_commands_total counter\n")
+	m.cmdDurationMu.Lock()
+	totalCmdCount := int64(0)
+	for name, b := range m.cmdDurations {
+		fmt.Fprintf(w, "kvrocks_commands_total{cmd=\"%s\"} %d\n", sanitizeLabel(name), b.count)
+		totalCmdCount += b.count
+	}
+	m.cmdDurationMu.Unlock()
+	fmt.Fprintf(w, "kvrocks_commands_total %d\n", m.totalCommands.Load()+totalCmdCount)
+
+	fmt.Fprintf(w, "# HELP kvrocks_commands_duration_seconds_total Cumulative command execution time per command\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_commands_duration_seconds_total counter\n")
+	m.cmdDurationMu.Lock()
+	for name, b := range m.cmdDurations {
+		fmt.Fprintf(w, "kvrocks_commands_duration_seconds_total{cmd=\"%s\"} %v\n",
+			sanitizeLabel(name), float64(b.sumNsec)/1e9)
+	}
+	m.cmdDurationMu.Unlock()
+
+	fmt.Fprintf(w, "# HELP kvrocks_memory_used_rss_bytes RSS memory in bytes\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_memory_used_rss_bytes gauge\n")
+	fmt.Fprintf(w, "kvrocks_memory_used_rss_bytes %d\n", memStats.Sys)
+
+	totalKeys := int64(0)
+	totalExpires := int64(0)
+	for _, db := range dbStats {
+		totalKeys += db.Keys
+		totalExpires += db.Expires
+	}
+	fmt.Fprintf(w, "# HELP kvrocks_estimate_keys Estimated keys per column family\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_estimate_keys gauge\n")
+	fmt.Fprintf(w, "kvrocks_estimate_keys{column_family=\"metadata\"} %d\n", totalKeys)
+	fmt.Fprintf(w, "# HELP kvrocks_db_keys Keys per database\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_db_keys gauge\n")
+	for _, db := range dbStats {
+		fmt.Fprintf(w, "kvrocks_db_keys{db=\"%d\"} %d\n", db.Index, db.Keys)
+	}
+	fmt.Fprintf(w, "# HELP kvrocks_db_keys_expiring Expiring keys per database\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_db_keys_expiring gauge\n")
+	for _, db := range dbStats {
+		fmt.Fprintf(w, "kvrocks_db_keys_expiring{db=\"%d\"} %d\n", db.Index, db.Expires)
+	}
+
+	fmt.Fprintf(w, "# HELP kvrocks_sequence Write sequence (proxy: total commands processed)\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_sequence gauge\n")
+	fmt.Fprintf(w, "kvrocks_sequence %d\n", m.totalCommands.Load())
+
+	fmt.Fprintf(w, "# HELP kvrocks_replica_resyncs_full Full resyncs served\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_replica_resyncs_full counter\n")
+	fmt.Fprintf(w, "kvrocks_replica_resyncs_full %d\n", m.fullResyncs.Load())
+	fmt.Fprintf(w, "# HELP kvrocks_replica_partial_resync_accepted Accepted partial resyncs\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_replica_partial_resync_accepted counter\n")
+	fmt.Fprintf(w, "kvrocks_replica_partial_resync_accepted %d\n", m.partialResync.Load())
+	fmt.Fprintf(w, "# HELP kvrocks_replica_partial_resync_denied Denied partial resyncs (fell back to full resync)\n")
+	fmt.Fprintf(w, "# TYPE kvrocks_replica_partial_resync_denied counter\n")
+	fmt.Fprintf(w, "kvrocks_replica_partial_resync_denied %d\n", m.partialResyncDenied.Load())
 
 	// ---- Cluster metrics (only in cluster mode) ----
 	if m.clusterStatsFn != nil {

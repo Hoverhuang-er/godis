@@ -111,6 +111,19 @@ type ServerProperties struct {
 	DataDir string `cfg:"data-dir" toml:"data_dir"`
 	// Web Dashboard settings
 	WebPort int `cfg:"web-port" toml:"web_port"`
+	// Sentinel settings
+	SentinelEnabled  bool                    `cfg:"sentinel-enabled" toml:"sentinel_enabled"`
+	SentinelPort     int                     `cfg:"sentinel-port" toml:"sentinel_port"`
+	SentinelMonitors []SentinelMonitorConfig `cfg:"sentinel-monitors" toml:"sentinel_monitors"`
+}
+
+// SentinelMonitorConfig describes one master monitored by the sentinel.
+type SentinelMonitorConfig struct {
+	Name        string `toml:"name" mapstructure:"name"`
+	Host        string `toml:"host" mapstructure:"host"`
+	Port        int    `toml:"port" mapstructure:"port"`
+	Quorum      int    `toml:"quorum" mapstructure:"quorum"`
+	DownAfterMs int    `toml:"down_after_ms" mapstructure:"down_after_ms"`
 }
 
 var configFilePath string
@@ -187,6 +200,7 @@ func init() {
 		HttpApiHost:                "127.0.0.1",
 		HttpApiPort:                63790,
 		WebPort:                    63800,
+		SentinelPort:               26379,
 	}
 	EachTimeServerInfo = &ServerInfo{}
 }
@@ -300,6 +314,12 @@ func populateFromViper(v *viper.Viper) {
 		}
 	}
 	_ = os.MkdirAll(Properties.DataDir, 0o755)
+	Properties.SentinelEnabled = getBool(v, "sentinel.enable", Properties.SentinelEnabled)
+	Properties.SentinelPort = getInt(v, "sentinel.port", Properties.SentinelPort)
+	var monitors []SentinelMonitorConfig
+	if err := v.UnmarshalKey("sentinel.monitors", &monitors); err == nil {
+		Properties.SentinelMonitors = monitors
+	}
 	notifyReload()
 }
 

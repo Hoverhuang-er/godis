@@ -236,3 +236,128 @@ func TestFailover(t *testing.T) {
 		}
 	}
 }
+
+func TestClusterEvict(t *testing.T) {
+	// start leader
+	leaderDir := "test/0"
+	os.RemoveAll(leaderDir)
+	os.MkdirAll(leaderDir, 0777)
+	defer func() {
+		os.RemoveAll(leaderDir)
+	}()
+	RegisterCmd("evict_probe", func(cluster *Cluster, c redis.Connection, cmdLine CmdLine) redis.Reply {
+		return protocol.MakeOkReply()
+	})
+
+	// connection stub
+	connections := NewInMemConnectionFactory()
+	leaderCfg := &Config{
+		RaftConfig: raft.RaftConfig{
+			RedisAdvertiseAddr: "127.0.0.1:6379",
+			RaftListenAddr:     "127.0.0.1:36666",
+			RaftAdvertiseAddr:  "127.0.0.1:36666",
+			Dir:                leaderDir,
+		},
+		StartAsSeed:    true,
+		connectionStub: connections,
+		noCron:         true,
+	}
+	leader, err := NewCluster(leaderCfg)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	connections.nodes[leaderCfg.RedisAdvertiseAddr] = leader
+
+	// start follower
+	followerDir := "test/1"
+	os.RemoveAll(followerDir)
+	os.MkdirAll(followerDir, 0777)
+	defer func() {
+		os.RemoveAll(followerDir)
+	}()
+	followerCfg := &Config{
+		RaftConfig: raft.RaftConfig{
+			RedisAdvertiseAddr: "127.0.0.1:6499",
+			RaftListenAddr:     "127.0.0.1:36667",
+			RaftAdvertiseAddr:  "127.0.0.1:36667",
+			Dir:                followerDir,
+		},
+		StartAsSeed:    false,
+		JoinAddress:    leaderCfg.RedisAdvertiseAddr,
+		connectionStub: connections,
+		noCron:         true,
+		Master:         leader.SelfID(),
+	}
+	follower, err := NewCluster(followerCfg)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	connections.nodes[followerCfg.RedisAdvertiseAddr] = follower
+
+	_ = follower.SelfID()
+	// wait for the follower to join
+	joined := false
+	for i := 0; i < 10; i++ {
+		nodes, err := leader.raftNode.GetNodes()
+		if err != nil {
+			t.Log(err)
+			continue
+		}
+		if len(nodes) == 2 {
+			joined = true
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if !joined {
+		t.Error("follower did not join")
+		return
+	}
+	// ensure the leader has a slot so evicting the follower yields a
+	// reachable single-node cluster (leader holds all slots already)
+	time.Sleep(time.Second)
+
+	// evict the follower via the command handler
+	reply := execEvictImpl(leader, utils.ToCmdLine("cluster.evict", followerCfg.RedisAdvertiseAddr))
+	if !protocol.IsOKReply(reply) {
+		t.Fatalf("evict failed: %s", string(reply.ToBytes()))
+	}
+
+	// wait until the follower is removed from raft config
+	evicted := false
+	for i := 0; i < 10; i++ {
+		nodes, err := leader.raftNode.GetNodes()
+		if err != nil {
+			t.Log(err)
+			continue
+		}
+		if len(nodes) == 1 {
+			evicted = true
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if !evicted {
+		t.Error("evict failed: follower still in raft config")
+		return
+	}
+
+	// the FSM must have dropped the follower: no slots, no master-slave entry
+	clean := false
+	for i := 0; i < 10; i++ {
+		leader.raftNode.FSM.WithReadLock(func(fsm *raft.FSM) {
+			_, hasSlots := fsm.Node2Slot[followerCfg.RedisAdvertiseAddr]
+			_, hasMs := fsm.MasterSlaves[followerCfg.RedisAdvertiseAddr]
+			if !hasSlots && !hasMs {
+				clean = true
+			}
+		})
+		if clean {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Error("evict failed: follower FSM state not cleaned up")
+}

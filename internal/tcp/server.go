@@ -100,9 +100,8 @@ func ListenAndServe(listener net.Listener, handler tcp.Handler) {
 			break
 		}
 
-		ClientCounter++
+		atomic.AddInt32(&ClientCounter, 1)
 		waitDone.Add(1)
-
 		err = handlerPool.Submit(func() {
 			defer func() {
 				waitDone.Done()

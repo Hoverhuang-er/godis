@@ -109,6 +109,7 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
+	go.etcd.io/bbolt v1.3.11 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
@@ -139,3 +140,5 @@ require (
 )
 
 replace github.com/boltdb/bolt v1.3.1 => ./patches/bolt
+
+replace github.com/hdt3213/rdb v1.3.2 => ./patches/rdb

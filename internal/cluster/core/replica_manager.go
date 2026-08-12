@@ -83,6 +83,13 @@ func (cluster *Cluster) failoverTimeout() time.Duration {
 }
 
 func (cluster *Cluster) doFailoverCheck() {
+	// A raft group with fewer than 2 voters cannot elect a leader to commit
+	// a failover decision; failing over in that state would just churn the
+	// FSM. Replicas in master-slave mode (<3 voters but >=2 nodes) use
+	// doReplicaFailoverCheck instead, so skip raft-driven failover here.
+	if cluster.raftNode.VoterCount() < 2 {
+		return
+	}
 	var timeoutMasters []*raft.MasterSlave
 	ddl := time.Now().Add(-cluster.failoverTimeout())
 	cluster.replicaManager.mu.RLock()
@@ -108,6 +115,9 @@ func (cluster *Cluster) doFailoverCheck() {
 }
 
 func (cluster *Cluster) triggerFailover(failed *raft.MasterSlave) error {
+	if failed == nil || failed.MasterId == "" || len(failed.Slaves) == 0 {
+		return nil
+	}
 	newMaster := failed.Slaves[0]
 	id := utils.RandString(20)
 	logger.Infof("start failover id=%s, oldMaster=%s, newMaster=%s", id, failed.MasterId, newMaster)

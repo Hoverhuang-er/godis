@@ -39,10 +39,12 @@ import (
 */
 
 const joinClusterCommand = "cluster.join"
+const evictClusterCommand = "cluster.evict"
 const migrationChangeRouteCommand = "cluster.migration.changeroute"
 
 func init() {
 	RegisterCmd(joinClusterCommand, execJoin)
+	RegisterCmd(evictClusterCommand, execEvict)
 	RegisterCmd(migrationChangeRouteCommand, execMigrationChangeRoute)
 }
 
@@ -97,6 +99,47 @@ func execJoin(cluster *Cluster, c redis.Connection, cmdLine CmdLine) redis.Reply
 	}
 
 	// join sucees, rebalance node
+	return protocol.MakeOkReply()
+}
+
+// execEvict handles the cluster.evict command. It forwards to the raft
+// leader when this node is not the leader, mirroring execJoin.
+func execEvict(cluster *Cluster, c redis.Connection, cmdLine CmdLine) redis.Reply {
+	return execEvictImpl(cluster, cmdLine)
+}
+
+// execEvictImpl performs the eviction. Format: cluster.evict <redisAddr>.
+func execEvictImpl(cluster *Cluster, cmdLine CmdLine) redis.Reply {
+	if len(cmdLine) != 2 {
+		return protocol.MakeArgNumErrReply(evictClusterCommand)
+	}
+	redisAddr := string(cmdLine[1])
+	if redisAddr == cluster.SelfID() {
+		return protocol.MakeErrReply("cannot evict self")
+	}
+	state := cluster.raftNode.State()
+	if state != raft.Leader {
+		// I am not leader, forward request to leader
+		leaderConn, err := cluster.BorrowLeaderClient()
+		if err != nil {
+			return protocol.MakeErrReply(err.Error())
+		}
+		defer cluster.connections.ReturnPeerClient(leaderConn)
+		return leaderConn.Send(cmdLine)
+	}
+	if err := cluster.raftNode.HandleEvict(redisAddr); err != nil {
+		return protocol.MakeErrReply(err.Error())
+	}
+	_, err := cluster.raftNode.Propose(&raft.LogEntry{
+		Event: raft.EventEvict,
+		JoinTask: &raft.JoinTask{
+			NodeId: redisAddr,
+		},
+	})
+	if err != nil {
+		return protocol.MakeErrReply(err.Error())
+	}
+	cluster.doRebalance()
 	return protocol.MakeOkReply()
 }
 

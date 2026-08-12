@@ -1,5 +1,17 @@
 # Godis Changelog
 
+## v1.3.4 (2026-08-10)
+
+### Features
+- feat: cluster v2 — OSS WAL-based replication, runtime hot-switch, disaster recovery, cluster metrics, HTTP join
+  - **Runtime standalone→cluster hot-switch**: turn on `[cluster] enable` while running, godis wraps the live server in a cluster atomically — no data loss, no dropped client connections; auto-generates the `cluster_id` and writes it back to the config file / Nacos
+  - **OSS (S3-compatible) WAL sync**: master appends commands to a WAL (same append-only stream as AOF) and uploads gzip-compressed, unencrypted segments to the bucket; replicas pull and replay. Objects are append-only (no DELETE ops → low S3 cost), layout under `{prefix}/{cluster_id}/{wal,state,base}/`
+  - **HTTP cluster join**: new `POST /api/cluster/join` and `GET /api/cluster/status`; joining nodes can use `cluster.join_http` + `cluster.join_http_token` instead of the TCP `seed` channel — both transports supported
+  - **Failover / disaster recovery**: ≥3 nodes → raft re-elects the master in a background goroutine; <3 nodes → a DR goroutine restores the newest data from OSS state markers and promotes the newest node
+  - **Cluster metrics on :9121**: `godis_cluster_enabled/mode/role/master_info/node_count/wal_seq_applied/wal_seq_published/sync_last_success/sync_lag_seconds/wal_upload_ms/wal_download_ms`
+  - Node version gap tolerance up to 3 major versions (`cluster_max_version_gap`), heartbeat 15s / 10 failures defaults
+- feat: merged remote main history (SSE PubSub, TCP connection pool, Monero mining defense, docs)
+
 ## v1.3.3-bugfix (2026-07-24)
 
 ### Features

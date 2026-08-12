@@ -4,7 +4,7 @@ import (
 	"io"
 	"sync"
 
-	jsonv2 "encoding/json/v2"
+	"encoding/json"
 
 	"github.com/hashicorp/raft"
 )
@@ -70,6 +70,7 @@ const (
 	EventSeedStart
 	EventFinishFailover
 	EventJoin
+	EventEvict
 )
 
 // LogEntry is an entry in raft log, stores a change of cluster
@@ -87,7 +88,7 @@ func (fsm *FSM) Apply(log *raft.Log) any {
 	defer fsm.mu.Unlock()
 
 	entry := &LogEntry{}
-	err := jsonv2.Unmarshal(log.Data, entry)
+	err := json.Unmarshal(log.Data, entry)
 	if err != nil {
 		panic(err)
 	}
@@ -120,6 +121,8 @@ func (fsm *FSM) Apply(log *raft.Log) any {
 	} else if entry.Event == EventJoin {
 		task := entry.JoinTask
 		fsm.addNode(task.NodeId, task.Master)
+	} else if entry.Event == EventEvict {
+		fsm.removeNode(entry.JoinTask.NodeId)
 	}
 	if fsm.changed != nil {
 		fsm.changed(fsm)
@@ -136,7 +139,7 @@ type FSMSnapshot struct {
 
 func (snapshot *FSMSnapshot) Persist(sink raft.SnapshotSink) error {
 	err := func() error {
-		data, err := jsonv2.Marshal(snapshot)
+		data, err := json.Marshal(snapshot)
 		if err != nil {
 			return err
 		}
@@ -184,7 +187,7 @@ func (fsm *FSM) Restore(src io.ReadCloser) error {
 		return err
 	}
 	snapshot := &FSMSnapshot{}
-	err = jsonv2.Unmarshal(data, snapshot)
+	err = json.Unmarshal(data, snapshot)
 	if err != nil {
 		return err
 	}

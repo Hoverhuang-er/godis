@@ -3,9 +3,14 @@ package database
 import (
 	"bytes"
 	"context"
+	"io"
 	"io/ioutil"
+	"net"
 	"os"
+	"os/exec"
 	"path"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +23,70 @@ import (
 	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 	"github.com/Hoverhuang-er/godis/internal/redis/protocol/asserts"
 )
+
+// masterPort returns the port of the real redis master used by replication
+// tests. Set GODIS_TEST_MASTER_PORT to run against an existing redis;
+// otherwise a throwaway redis-server is started for the test run (the old
+// "default to 6379" probe was fragile: 6379 may be anything, e.g. a tunnel).
+func masterPort() string {
+	if p := os.Getenv("GODIS_TEST_MASTER_PORT"); p != "" {
+		return p
+	}
+	testMasterOnce.Do(func() {
+		port := strconv.Itoa(freePort())
+		cmd := exec.Command("redis-server", "--port", port, "--save", "", "--appendonly", "no", "--daemonize", "no")
+		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+		if err := cmd.Start(); err != nil {
+			panic("start test redis: " + err.Error())
+		}
+		testMasterCmd = cmd
+		testMasterPort = port
+		waitRedisReady("127.0.0.1:" + port)
+	})
+	return testMasterPort
+}
+
+var (
+	testMasterOnce sync.Once
+	testMasterPort string
+	testMasterCmd  *exec.Cmd
+)
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if testMasterCmd != nil {
+		_ = testMasterCmd.Process.Kill()
+	}
+	os.Exit(code)
+}
+
+func waitRedisReady(addr string) {
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	panic("test redis at " + addr + " did not become ready")
+}
+
+func freePort() int {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port
+}
+
+// masterAddr returns host:port of the real redis master for replication tests.
+func masterAddr() string {
+	return "127.0.0.1:" + masterPort()
+}
 
 func TestReplicationSlaveSide(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "godis")
@@ -36,7 +105,7 @@ func TestReplicationSlaveSide(t *testing.T) {
 	}
 	conn := connection.NewFakeConn()
 	server := mockServer()
-	masterCli, err := client.MakeClient("127.0.0.1:6379")
+	masterCli, err := client.MakeClient(masterAddr())
 	if err != nil {
 		t.Error(err)
 		return
@@ -53,7 +122,7 @@ func TestReplicationSlaveSide(t *testing.T) {
 	// sync with master
 	ret := masterCli.Send(utils.ToCmdLine("set", "1", "1"))
 	asserts.AssertStatusReply(t, ret, "OK")
-	ret = server.Exec(conn, utils.ToCmdLine("SLAVEOF", "127.0.0.1", "6379"))
+	ret = server.Exec(conn, utils.ToCmdLine("SLAVEOF", "127.0.0.1", masterPort()))
 	asserts.AssertStatusReply(t, ret, "OK")
 	success := false
 	for i := 0; i < 30; i++ {
@@ -133,7 +202,7 @@ func TestReplicationSlaveSide(t *testing.T) {
 	asserts.AssertStatusReply(t, ret, "OK")
 	ret = server.Exec(conn, utils.ToCmdLine("GET", "1"))
 	asserts.AssertBulkReply(t, ret, "3")
-	ret = server.Exec(conn, utils.ToCmdLine("SLAVEOF", "127.0.0.1", "6379"))
+	ret = server.Exec(conn, utils.ToCmdLine("SLAVEOF", "127.0.0.1", masterPort()))
 	asserts.AssertStatusReply(t, ret, "OK")
 	success = false
 	for i := 0; i < 30; i++ {
@@ -194,8 +263,8 @@ func TestReplicationFailover(t *testing.T) {
 		return
 	}
 	server.bindPersister(aofHandler)
-	
-	masterCli, err := client.MakeClient("127.0.0.1:6379")
+
+	masterCli, err := client.MakeClient(masterAddr())
 	if err != nil {
 		t.Error(err)
 		return
@@ -205,7 +274,7 @@ func TestReplicationFailover(t *testing.T) {
 	// sync with master
 	ret := masterCli.Send(utils.ToCmdLine("set", "1", "1"))
 	asserts.AssertStatusReply(t, ret, "OK")
-	ret = server.Exec(conn, utils.ToCmdLine("SLAVEOF", "127.0.0.1", "6379"))
+	ret = server.Exec(conn, utils.ToCmdLine("SLAVEOF", "127.0.0.1", masterPort()))
 	asserts.AssertStatusReply(t, ret, "OK")
 	success := false
 	for i := 0; i < 30; i++ {
@@ -240,10 +309,10 @@ func TestReplicationFailover(t *testing.T) {
 	serverB.loadMasterRDB(0)
 	server.masterCron()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-    defer cancel()
-    go serverB.receiveAOF(ctx, 0)
+	defer cancel()
+	go serverB.receiveAOF(ctx, 0)
 
-    time.Sleep(3 * time.Second)
+	time.Sleep(3 * time.Second)
 	ret = serverB.Exec(conn, utils.ToCmdLine("get", "1"))
 	asserts.AssertBulkReply(t, ret, "1")
 	ret = serverB.Exec(conn, utils.ToCmdLine("get", "2"))

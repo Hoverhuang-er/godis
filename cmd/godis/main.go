@@ -19,6 +19,7 @@ import (
 	rclient "github.com/Hoverhuang-er/godis/internal/redis/client"
 	"github.com/Hoverhuang-er/godis/internal/redis/server/gnet"
 	stdserver "github.com/Hoverhuang-er/godis/internal/redis/server/std"
+	"github.com/Hoverhuang-er/godis/internal/sentinel"
 	"github.com/Hoverhuang-er/godis/internal/web"
 	"log/slog"
 )
@@ -156,6 +157,30 @@ func main() {
 		}
 
 		go func() { _ = stdserver.Serve(listenAddr, handler, stopCh) }()
+	}
+
+	// Sentinel: optional RESP server exposing the SENTINEL command surface
+	// for failover of externally-monitored masters.
+	if config.Properties.SentinelEnabled {
+		sentCfg := sentinel.Config{
+			Enabled:  true,
+			Port:     config.Properties.SentinelPort,
+			SelfAddr: config.Properties.AnnounceAddress(),
+		}
+		for _, mc := range config.Properties.SentinelMonitors {
+			sentCfg.Monitors = append(sentCfg.Monitors, sentinel.MonitorConfig{
+				Name:        mc.Name,
+				Host:        mc.Host,
+				Port:        mc.Port,
+				Quorum:      mc.Quorum,
+				DownAfterMs: mc.DownAfterMs,
+			})
+		}
+		sen := sentinel.New(sentCfg)
+		sen.Start()
+		sentinelAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.SentinelPort))
+		go func() { _ = sentinel.Serve(sentinelAddr, sentinel.NewHandler(sen), stopCh) }()
+		slog.Info("sentinel started", "addr", sentinelAddr, "monitors", len(sentCfg.Monitors))
 	}
 
 	// Wait for SIGINT/SIGTERM for graceful shutdown

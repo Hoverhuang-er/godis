@@ -1,4 +1,4 @@
-# Godis v1.3.3
+# Godis v1.3.4
 
 ![license](https://img.shields.io/github/license/Hoverhuang-er/godis)
 [![Build Status](https://github.com/Hoverhuang-er/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/Hoverhuang-er/godis/actions?query=branch%3Amaster)
@@ -221,6 +221,19 @@ force_path_style = true              # required for MinIO
 When OSS is unavailable or disabled, nodes fall back to direct TCP replication (legacy behavior).
 
 **Disaster recovery.** A background goroutine watches the OSS state markers (one small object per node, holding the highest WAL seq each node applied). When a master dies in **raft mode (≥ 3 nodes)** the raft leader re-elects a new master. When the cluster shrinks below 3 nodes, survivors pick the node with the newest applied data by comparing marker metadata and restore it as the new master — no manual intervention needed.
+
+**What happens when a node goes down (failover walkthrough):**
+
+- **Raft mode (≥ 3 nodes) — automatic master re-election.** Nodes probe each other every `heartbeat_interval` seconds (default 15s). After `failover_max_failures` consecutive missed probes (default 10, i.e. ~150s) a node is declared dead. The raft leader removes the dead node from the voter set and the surviving members elect a new master: the promoted node starts publishing its own WAL to OSS, every demoted node stops publishing and becomes a replica of the new master. Client connections on the surviving nodes keep working; clients connected to the dead node must reconnect to another node (any node serves the whole dataset).
+- **Master-slave mode (< 3 nodes) — OSS disaster recovery.** With fewer than 3 voting members raft cannot elect a leader, so the disaster-recovery goroutine takes over: every 30s each surviving node lists the OSS state markers, sorts them by applied WAL seq (newest data wins, ties broken by marker timestamp), restores the newest segments from OSS into its local database, then promotes itself (or follows the newest node when it is not the self). Because OSS objects are append-only, the dead node's WAL segments remain pullable forever — data published before the crash is never lost.
+- **Restarting a dead node.** Bring it back with the same config it joined with (`cluster_id`, `seed`/`join_http`, unique `raft_listen_address`). On startup the node finds it already has raft state on disk, reads the current master from the raft FSM and becomes its replica, catching up via OSS — no manual re-join needed.
+- **The node with the newest data wins.** All failover paths (raft re-election and DR promotion) compare OSS state markers, so the node holding the highest applied WAL seq — i.e. the newest committed data — becomes the new master. There is no split-brain: in raft mode quorum rules apply, below quorum the markers act as the single source of truth.
+
+**Scaling the cluster:**
+
+- **Scaling up (add a node).** Start a new node with the shared `cluster_id` plus either `seed = "<any existing node's redis address>"` (TCP join) or `join_http = "<any node's http api address>"` (HTTP join). The new node is added to the raft configuration as a voter. At ≥ 3 nodes the cluster runs raft mode and the leader balances slot ownership across members; below 3 nodes the new node joins as a master-slave replica. The join is dynamic — existing nodes do not need to restart.
+- **Scaling down (remove a node).** v1.3.4 keeps the internal raft eviction primitive (`HandleEvict` / `RemoveServer`) but does **not** expose a user-facing remove command or HTTP endpoint yet. To shrink a cluster today, stop the node's godis process; the remaining members detect it via the health probe and (in raft mode) re-elect/keep the master automatically. Its OSS WAL segments are retained (append-only design), so bringing it back later re-syncs cleanly. A dedicated `cluster.evict` command / `DELETE /api/cluster/node` endpoint is planned for a future release.
+- **Object layout in OSS.** All cluster data lives under `{prefix}/{cluster_id}/` in the bucket: `wal/{nodeAddr}/` holds each node's append-only gzip-compressed WAL segments, `state/` holds the per-node state markers used by failover/DR, `base/{nodeAddr}/` holds optional base snapshots. Nothing is ever deleted, keeping S3 costs low.
 
 **Cluster metrics on `:9121`.** With `prometheus_enabled = true`, the `/metrics` endpoint exposes `godis_cluster_enabled`, `godis_cluster_mode` (`raft`/`master-slave`), `godis_cluster_role` (`master`/`slave`), `godis_cluster_master_info{master_id, master_addr}`, `godis_cluster_node_count`, `godis_cluster_wal_seq_applied` / `godis_cluster_wal_seq_published`, `godis_cluster_sync_last_success` / `godis_cluster_sync_lag_seconds` and WAL upload/download durations — enough to pinpoint the master and measure replication lag.
 

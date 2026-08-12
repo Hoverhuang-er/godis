@@ -57,7 +57,16 @@ func (fsm *FSM) removeSlots(nodeID string, slots []uint32) {
 }
 
 func (fsm *FSM) failover(oldMasterId, newMasterId string) {
-	oldSlaves := fsm.MasterSlaves[oldMasterId].Slaves
+	oldMaster := fsm.MasterSlaves[oldMasterId]
+	if oldMaster == nil {
+		delete(fsm.SlaveMasters, newMasterId)
+		fsm.MasterSlaves[newMasterId] = &MasterSlave{
+			MasterId: newMasterId,
+			Slaves:   []string{oldMasterId},
+		}
+		return
+	}
+	oldSlaves := oldMaster.Slaves
 	newSlaves := make([]string, 0, len(oldSlaves))
 	// change other slaves
 	for _, slave := range oldSlaves {
@@ -112,4 +121,13 @@ func (fsm *FSM) addNode(id, masterId string) error {
 		fsm.SlaveMasters[id] = masterId
 	}
 	return nil
+}
+
+// removeNode drops a node from the cluster: its slots are unassigned and
+// its master-slave records are deleted. Callers are expected to migrate
+// the freed slots onto remaining nodes afterwards.
+func (fsm *FSM) removeNode(id string) {
+	delete(fsm.Node2Slot, id)
+	delete(fsm.SlaveMasters, id)
+	delete(fsm.MasterSlaves, id)
 }

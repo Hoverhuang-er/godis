@@ -31,3 +31,6 @@ logs
 .idea
 *.iml
 .vscode/
+
+# Deepwork state
+.slim/deepwork/

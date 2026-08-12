@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/sync/atomic"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
+	"github.com/Hoverhuang-er/godis/internal/monitoring"
 	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 	"log/slog"
 )
@@ -22,7 +24,7 @@ import (
 `execPSync` receives `slaveof` command. Depending on the status of rdb, there are two branches:
 
 Branch A: rdb is not ready
-1. Master adds the client into `server.masterStatus.waitSlaves`. 
+1. Master adds the client into `server.masterStatus.waitSlaves`.
 2. If there is no rdb generation in progress, calls `saveForReplication` to start.
 3. `persister.GenerateRDBForReplication` generates rdb file and sends following updates after rdb to parameter `listener`
 4. After the rdb generation is done, `saveForReplication` calls `masterFullReSyncWithSlave` to send rdb to `waitSlaves`
@@ -66,11 +68,8 @@ type replBacklog struct {
 	buf           []byte
 	beginOffset   int64
 	currentOffset int64
-}
-
-func (backlog *replBacklog) appendBytes(bin []byte) {
-	backlog.buf = append(backlog.buf, bin...)
-	backlog.currentOffset += int64(len(bin))
+	walFile       *os.File // persisted mirror, nil when persistence disabled
+	walPath       string
 }
 
 func (backlog *replBacklog) getSnapshot() ([]byte, int64) {
@@ -322,6 +321,9 @@ func (server *Server) execPSync(c redis.Connection, args [][]byte) redis.Reply {
 			}()
 			err := server.masterTryPartialSyncWithSlave(slave, replId, replOffset)
 			if err == nil {
+				if server.metrics != nil {
+					server.metrics.IncrPartialResync()
+				}
 				return
 			}
 			if err != cannotPartialSync {
@@ -330,6 +332,10 @@ func (server *Server) execPSync(c redis.Connection, args [][]byte) redis.Reply {
 				return
 			}
 			// assert err == cannotPartialSync
+			if server.metrics != nil {
+				server.metrics.IncrPartialResyncDenied()
+				server.metrics.IncrFullResyncs()
+			}
 			if err := server.masterFullReSyncWithSlave(slave); err != nil {
 				server.removeSlave(slave)
 				slog.Error(fmt.Sprintf("masterFullReSyncWithSlave error: %v", err))
@@ -382,9 +388,109 @@ func (server *Server) setSlaveOnline(slave *slaveClient, currentOffset int64) {
 	server.masterStatus.onlineSlaves[slave] = struct{}{}
 }
 
-var pingBytes = protocol.MakeMultiBulkReply(utils.ToCmdLine("ping")).ToBytes()
+// genReplicationInfo renders the `replication` section of the INFO command,
+// compatible with Redis/Kvrocks field names consumed by Redis Sentinel probes.
+func (server *Server) genReplicationInfo() []byte {
+	role := "master"
+	if server.role == slaveRole {
+		role = "slave"
+	}
+	if role == "master" {
+		server.masterStatus.mu.RLock()
+		replId := server.masterStatus.replId
+		replOffset := server.masterStatus.backlog.currentOffset
+		slaveCount := len(server.masterStatus.slaveMap)
+		server.masterStatus.mu.RUnlock()
+		s := fmt.Sprintf("# Replication\r\n"+
+			"role:%s\r\n"+
+			"master_replid:%s\r\n"+
+			"master_replid2:0000000000000000000000000000000000000000\r\n"+
+			"master_repl_offset:%d\r\n"+
+			"second_repl_offset:-1\r\n"+
+			"repl_backlog_active:1\r\n"+
+			"repl_backlog_size:%d\r\n"+
+			"repl_backlog_first_byte_offset:%d\r\n"+
+			"repl_backlog_histlen:%d\r\n"+
+			"connected_slaves:%d\r\n",
+			role,
+			replId,
+			replOffset,
+			maxBacklogSize,
+			server.masterStatus.backlog.beginOffset,
+			replOffset-server.masterStatus.backlog.beginOffset,
+			slaveCount,
+		)
+		return []byte(s)
+	}
+	server.slaveStatus.mutex.Lock()
+	defer server.slaveStatus.mutex.Unlock()
+	host := server.slaveStatus.masterHost
+	port := server.slaveStatus.masterPort
+	replId := server.slaveStatus.replId
+	replOffset := server.slaveStatus.replOffset
+	linkStatus := "down"
+	if server.slaveStatus.masterConn != nil {
+		linkStatus = "up"
+	}
+	s := fmt.Sprintf("# Replication\r\n"+
+		"role:%s\r\n"+
+		"master_host:%s\r\n"+
+		"master_port:%d\r\n"+
+		"master_link_status:%s\r\n"+
+		"master_replid:%s\r\n"+
+		"master_repl_offset:%d\r\n"+
+		"slave_repl_offset:%d\r\n"+
+		"slave_read_only:1\r\n",
+		role,
+		host,
+		port,
+		linkStatus,
+		replId,
+		replOffset,
+		replOffset,
+	)
+	return []byte(s)
+}
 
-const maxBacklogSize = 10 * 1024 * 1024 // 10MB
+// getReplStats returns a snapshot of replication state for Prometheus scraping.
+func (server *Server) getReplStats() monitoring.ReplStats {
+	rs := monitoring.ReplStats{Role: "master"}
+	if server.role == slaveRole {
+		rs.Role = "slave"
+	}
+	if rs.Role == "slave" {
+		server.slaveStatus.mutex.Lock()
+		rs.MasterLinkUp = server.slaveStatus.masterConn != nil
+		rs.ReplOffset = server.slaveStatus.replOffset
+		server.slaveStatus.mutex.Unlock()
+		return rs
+	}
+	server.masterStatus.mu.RLock()
+	rs.ConnectedSlaves = len(server.masterStatus.slaveMap)
+	rs.ReplOffset = server.masterStatus.backlog.currentOffset
+	rs.BacklogLen = server.masterStatus.backlog.currentOffset - server.masterStatus.backlog.beginOffset
+	rs.SlaveLags = make([]monitoring.SlaveLag, 0, len(server.masterStatus.slaveMap))
+	now := time.Now()
+	for _, slave := range server.masterStatus.slaveMap {
+		ip := slave.announceIp
+		port := slave.announcePort
+		if ip == "" {
+			// fall back to the remote address of the connection
+			if host, _, err := net.SplitHostPort(slave.conn.RemoteAddr()); err == nil {
+				ip = host
+			}
+		}
+		lag := 0.0
+		if !slave.lastAckTime.IsZero() {
+			lag = now.Sub(slave.lastAckTime).Seconds()
+		}
+		rs.SlaveLags = append(rs.SlaveLags, monitoring.SlaveLag{IP: ip, Port: port, LagSeconds: lag})
+	}
+	server.masterStatus.mu.RUnlock()
+	return rs
+}
+
+var pingBytes = protocol.MakeMultiBulkReply(utils.ToCmdLine("ping")).ToBytes()
 
 func (server *Server) masterCron() {
 	server.masterStatus.mu.Lock()
@@ -398,7 +504,7 @@ func (server *Server) masterCron() {
 	backlogSize := len(server.masterStatus.backlog.buf)
 	server.masterStatus.mu.Unlock()
 	if err := server.masterSendUpdatesToSlave(); err != nil {
-			slog.Error(fmt.Sprintf("masterSendUpdatesToSlave error: %v", err))
+		slog.Error(fmt.Sprintf("masterSendUpdatesToSlave error: %v", err))
 	}
 	if backlogSize > maxBacklogSize && !server.masterStatus.rewriting.Get() {
 		go func() {
@@ -436,10 +542,16 @@ func (listener *replAofListener) Callback(cmdLines []CmdLine) {
 }
 
 func (server *Server) initMasterStatus() {
+	walDir := replBacklogDir()
+	backlog, err := openReplBacklog(walDir)
+	if err != nil {
+		slog.Warn(fmt.Sprintf("open repl wal failed, fallback to memory backlog: %v", err))
+		backlog = &replBacklog{}
+	}
 	server.masterStatus = &masterStatus{
 		mu:           sync.RWMutex{},
-		replId:       utils.RandHexString(40),
-		backlog:      &replBacklog{},
+		replId:       loadReplID(walDir),
+		backlog:      backlog,
 		slaveMap:     make(map[redis.Connection]*slaveClient),
 		waitSlaves:   make(map[*slaveClient]struct{}),
 		onlineSlaves: make(map[*slaveClient]struct{}),
@@ -467,6 +579,8 @@ func (server *Server) stopMaster() {
 	_ = os.Remove(server.masterStatus.rdbFilename)
 	server.masterStatus.rdbFilename = ""
 	server.masterStatus.replId = ""
+	server.masterStatus.backlog.close()
+	removeReplPersistence(replBacklogDir())
 	server.masterStatus.backlog = &replBacklog{}
 	server.masterStatus.slaveMap = make(map[redis.Connection]*slaveClient)
 	server.masterStatus.waitSlaves = make(map[*slaveClient]struct{})

@@ -95,3 +95,44 @@ func (s *ApiServer) handleClusterStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, status)
 }
+
+// clusterNodeDeleteRequest is the payload for DELETE /api/cluster/node.
+type clusterNodeDeleteRequest struct {
+	RedisAddr string `json:"redis_addr"`
+}
+
+// handleClusterNodeDelete forwards a cluster-evict command to the local
+// godis node, mirroring how handleClusterJoin forwards the join handshake.
+func (s *ApiServer) handleClusterNodeDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "only DELETE allowed"})
+		return
+	}
+	var req clusterNodeDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid JSON body"})
+		return
+	}
+	if req.RedisAddr == "" {
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "redis_addr is required"})
+		return
+	}
+	client := s.getClient()
+	if client == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errorResponse{Error: "redis connection not ready"})
+		return
+	}
+	cliArgs := utils.ToCmdLine("cluster.evict", req.RedisAddr)
+	reply := client.Send(cliArgs)
+	if isErrorReply(reply) {
+		writeJSON(w, http.StatusOK, commandResult{
+			Success: false,
+			Error:   extractError(reply),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, commandResult{
+		Success: true,
+		Result:  "node evicted from cluster",
+	})
+}

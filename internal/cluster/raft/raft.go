@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	jsonv2 "encoding/json/v2"
+	"encoding/json"
 
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
@@ -219,7 +219,7 @@ func (node *Node) HandleEvict(redisAddr string) error {
 }
 
 func (node *Node) Propose(event *LogEntry) (uint64, error) {
-	bin, err := jsonv2.Marshal(event)
+	bin, err := json.Marshal(event)
 	if err != nil {
 		return 0, fmt.Errorf("marshal event failed: %v", err)
 	}

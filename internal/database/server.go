@@ -117,6 +117,7 @@ func NewStandaloneServer() *Server {
 	// Initialize Prometheus metrics
 	if config.Properties.PrometheusEnabled {
 		server.metrics = monitoring.New(server.getDBStats)
+		server.metrics.SetReplStatsFn(server.getReplStats)
 		monitoring.StartMetricsServer(server.metrics)
 	}
 
@@ -147,6 +148,9 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 	// Increment command counter for Prometheus metrics
 	if server.metrics != nil {
 		server.metrics.IncrCommands()
+		defer func() {
+			server.metrics.RecordCommandDuration(strings.ToLower(string(cmdLine[0])), time.Since(GodisExecCommandStartUnixTime))
+		}()
 	}
 
 
@@ -279,6 +283,9 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 	exec := selectedDB.Exec(c, cmdLine)
 	// Record slow query logs
 	server.slogLogger.Record(GodisExecCommandStartUnixTime, cmdLine, c.Name())
+	if server.metrics != nil && time.Since(GodisExecCommandStartUnixTime).Microseconds() >= config.Properties.SlowLogSlowerThan {
+		server.metrics.IncrSlowLog()
+	}
 	return exec
 }
 

@@ -138,6 +138,19 @@ force_path_style = true              # MinIO 必需
 
 **灾难恢复。** 后台 goroutine 持续监控 OSS 上的 state marker（每个节点一个小对象，记录其已应用的最大 WAL 序号）。**Raft 模式（≥ 3 节点）** 下主节点宕机由 raft 重新选出新主；集群缩减到 **3 节点以下** 时，幸存节点对比 marker 元数据，挑选数据最新（WAL 序号最大）的节点恢复为新主，无需人工干预。
 
+**节点掉线后的故障转移（failover 操作指引）：**
+
+- **Raft 模式（≥ 3 节点）—— 自动重新竞选主节点。** 节点每 `heartbeat_interval` 秒（默认 15 秒）互相探活，连续 `failover_max_failures` 次（默认 10 次，约 150 秒）未探到即判定节点失联。raft 主节点将失联节点移出投票集合，幸存成员重新选出新主：被提升的节点立即开始向 OSS 发布自己的 WAL，被降级的节点停止发布并成为新主的从节点。幸存节点上的客户端连接不受影响；连接在失联节点上的客户端需要改连其他节点（任意节点都能访问全部数据）。
+- **主从模式（< 3 节点）—— OSS 灾难恢复。** 节点少于 3 个时 raft 无法选出领导者，改由灾难恢复 goroutine 接管：每 30 秒幸存节点列出 OSS 上的 state marker，按已应用 WAL 序号排序（数据最新者胜出，序号相同时按 marker 时间戳），从 OSS 恢复最新段到本地数据库，然后提升自己（若最新数据不在本节点则跟随最新节点）。因为 OSS 对象只追加不删除，失联节点的 WAL 段永远可拉取——宕机前已发布的数据不会丢失。
+- **重启失联节点。** 用与原配置相同的 `cluster_id`、`seed`/`join_http` 和唯一的 `raft_listen_address` 重启。启动时节点发现磁盘上已有 raft 状态，从 raft FSM 读取当前主节点并成为其从节点，通过 OSS 追赶数据——无需手动重新加入。
+- **数据最新者胜出。** 所有故障转移路径（raft 重选与 DR 提升）都对比 OSS state marker，持有最大已应用 WAL 序号（即最新已提交数据）的节点成为新主。不会出现脑裂：raft 模式下遵循法定人数规则，不足法定人数时以 marker 为唯一事实来源。
+
+**集群扩缩容：**
+
+- **扩容（加节点）。** 用相同的 `cluster_id` 启动新节点，配合 `seed = "<任意已有节点的 Redis 地址>"`（TCP 加入）或 `join_http = "<任意节点的 HTTP API 地址>"`（HTTP 加入）。新节点作为投票成员加入 raft 配置。节点 ≥ 3 时集群运行 raft 模式，主节点会在成员间平衡槽位归属；< 3 时新节点作为主从副本加入。加入是动态的，已有节点无需重启。
+- **缩容（移除节点）。** v1.3.4 保留了 raft 内部驱逐原语（`HandleEvict` / `RemoveServer`），但**尚未开放**面向用户的移除命令或 HTTP 端点。当前要缩容：直接停止该节点的 godis 进程即可——其余成员通过探活发现失联，raft 模式下自动重选/维持主节点。其 OSS WAL 段因只追加设计而保留，之后重新拉起可干净地重新同步。面向用户的 `cluster.evict` 命令 / `DELETE /api/cluster/node` 端点计划在未来版本提供。
+- **OSS 对象布局。** 集群所有数据位于桶内 `{prefix}/{cluster_id}/` 下：`wal/{nodeAddr}/` 存放各节点只追加的 gzip 压缩 WAL 段，`state/` 存放故障转移/DR 使用的各节点状态 marker，`base/{nodeAddr}/` 存放可选的基础快照。任何对象都不会被删除，保持 S3 低成本。
+
 **集群指标（`:9121`）。** 开启 `prometheus_enabled = true` 后，`/metrics` 端点暴露 `godis_cluster_enabled`、`godis_cluster_mode`（`raft`/`master-slave`）、`godis_cluster_role`（`master`/`slave`）、`godis_cluster_master_info{master_id, master_addr}`、`godis_cluster_node_count`、`godis_cluster_wal_seq_applied` / `godis_cluster_wal_seq_published`、`godis_cluster_sync_last_success` / `godis_cluster_sync_lag_seconds` 以及 WAL 上传/下载耗时——足以精确定位主节点并观测复制延迟。
 
 集群模式对客户端是透明的，只要连接上集群中任意一个节点就可以访问集群中所有数据：

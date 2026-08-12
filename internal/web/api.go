@@ -52,6 +52,7 @@ func NewApiServer(addr, redisAddr, redisPassword string) *ApiServer {
 	mux.HandleFunc("/api/commands", s.authMiddleware(s.handleCommands))
 	mux.HandleFunc("/api/cluster/join", s.authMiddleware(s.handleClusterJoin))
 	mux.HandleFunc("/api/cluster/status", s.authMiddleware(s.handleClusterStatus))
+	mux.HandleFunc("/api/cluster/node", s.authMiddleware(s.handleClusterNodeDelete))
 
 	s.httpServer = &http.Server{
 		Addr:    addr,
