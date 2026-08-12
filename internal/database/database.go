@@ -118,6 +118,11 @@ func (db *DB) execNormalCommand(cmdLine [][]byte) redis.Reply {
 
 	prepare := cmd.prepare
 	write, read := prepare(cmdLine[1:])
+	for _, k := range write {
+		if IsConfKey(k) {
+			return protocol.MakeErrReply("ERR reserved key prefix \"conf:\"")
+		}
+	}
 	db.addVersion(write...)
 	db.RWLocks(write, read)
 	defer db.RWUnLocks(write, read)
@@ -134,6 +139,14 @@ func (db *DB) execWithLock(cmdLine [][]byte) redis.Reply {
 	}
 	if !validateArity(cmd.arity, cmdLine) {
 		return protocol.MakeArgNumErrReply(cmdName)
+	}
+	if cmd.prepare != nil {
+		write, _ := cmd.prepare(cmdLine[1:])
+		for _, k := range write {
+			if IsConfKey(k) {
+				return protocol.MakeErrReply("ERR reserved key prefix \"conf:\"")
+			}
+		}
 	}
 	fun := cmd.executor
 	return fun(db, cmdLine[1:])

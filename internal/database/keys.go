@@ -338,6 +338,9 @@ func execKeys(db *DB, args [][]byte) redis.Reply {
 	}
 	result := make([][]byte, 0)
 	db.data.ForEach(func(key string, val interface{}) bool {
+		if IsConfKey(key) {
+			return true
+		}
 		if !pattern.IsMatch(key) {
 			return true
 		}
@@ -463,6 +466,13 @@ func execScan(db *DB, args [][]byte) redis.Reply {
 	if nextCursor < 0 {
 		return protocol.MakeErrReply("Invalid argument")
 	}
+	filtered := keysReply[:0]
+	for _, k := range keysReply {
+		if !IsConfKey(string(k)) {
+			filtered = append(filtered, k)
+		}
+	}
+	keysReply = filtered
 
 	if len(scanType) != 0 {
 		for i := 0; i < len(keysReply); {
