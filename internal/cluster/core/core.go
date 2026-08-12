@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -189,25 +190,46 @@ func NewCluster(cfg *Config) (*Cluster, error) {
 					return nil, err
 				}
 			} else {
-				conn, err := connections.BorrowPeerClient(cfg.JoinAddress)
-				if err != nil {
-					return nil, err
+				// The seed may still be promoting (a runtime-promoted seed
+				// bootstraps raft for up to ~2x the heartbeat interval), so
+				// retry the handshake instead of failing on the first
+				// attempt's client timeout.
+				deadline := time.Now().Add(2*cfg.ElectionTimeout + 5*time.Second)
+				if cfg.ElectionTimeout == 0 {
+					deadline = time.Now().Add(10 * time.Second)
 				}
-				defer connections.ReturnPeerClient(conn)
-				joinCmdLine := utils.ToCmdLine(joinClusterCommand, cfg.RedisAdvertiseAddr, cfg.RaftAdvertiseAddr)
-				if config.Properties.ClusterID != "" {
-					// new format with cluster-id handshake; legacy seeds without
-					// a cluster id still accept the 2-arg form
-					joinCmdLine = utils.ToCmdLine(joinClusterCommand, config.Properties.ClusterID,
-						cfg.RedisAdvertiseAddr, cfg.RaftAdvertiseAddr)
-				}
-				if cfg.Master != "" {
-					joinCmdLine = append(joinCmdLine, []byte(cfg.Master))
-				}
-				logger.Infof("send join cluster request to %s", cfg.JoinAddress)
-				result := conn.Send(joinCmdLine)
-				if err := protocol.Try2ErrorReply(result); err != nil {
-					return nil, err
+				var result redis.Reply
+				for {
+					conn, err := connections.BorrowPeerClient(cfg.JoinAddress)
+					if err == nil {
+						joinCmdLine := utils.ToCmdLine(joinClusterCommand, cfg.RedisAdvertiseAddr, cfg.RaftAdvertiseAddr)
+						if config.Properties.ClusterID != "" {
+							// new format with cluster-id handshake; legacy seeds without
+							// a cluster id still accept the 2-arg form
+							joinCmdLine = utils.ToCmdLine(joinClusterCommand, config.Properties.ClusterID,
+								cfg.RedisAdvertiseAddr, cfg.RaftAdvertiseAddr)
+						}
+						if cfg.Master != "" {
+							joinCmdLine = append(joinCmdLine, []byte(cfg.Master))
+						}
+						logger.Infof("send join cluster request to %s", cfg.JoinAddress)
+						result = conn.Send(joinCmdLine)
+						connections.ReturnPeerClient(conn)
+						err := protocol.Try2ErrorReply(result)
+						if err == nil || strings.Contains(err.Error(), "already in cluster") {
+							// an accepted join that the client timed out on
+							// may surface as "already in cluster" on retry;
+							// membership is the goal, so treat it as success
+							break
+						}
+					}
+					if time.Now().After(deadline) {
+						if err != nil {
+							return nil, err
+						}
+						return nil, fmt.Errorf("join cluster %s failed: %s", cfg.JoinAddress, result.ToBytes())
+					}
+					time.Sleep(time.Second)
 				}
 			}
 		}

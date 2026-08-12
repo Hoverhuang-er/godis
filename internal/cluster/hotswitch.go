@@ -93,13 +93,18 @@ func hotSwitch(swapper DBSwapper) {
 
 // RegisterJoinIntercept wires the standalone cluster.join intercept: the
 // first join request to this node promotes it to seed and hands the command
-// to the new cluster.
+// to the new cluster. Later joins (node already promoted) are forwarded
+// straight to the cluster's join handler.
 func RegisterJoinIntercept(swapper DBSwapper) {
 	dbimpl.RegisterClusterJoinHandler(func(c redis.Connection, cmdLine [][]byte) redis.Reply {
-		if err := promoteToSeed(swapper, true); err != nil {
+		err := promoteToSeed(swapper, true)
+		if err != nil && !errors.Is(err, errAlreadyInCluster) {
 			return protocol.MakeErrReply(err.Error())
 		}
 		cl := Current()
+		if cl == nil {
+			return protocol.MakeErrReply("join failed: node not promoted")
+		}
 		return cl.Exec(c, cmdLine)
 	})
 }

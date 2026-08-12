@@ -141,8 +141,13 @@ func (node *Node) BootstrapCluster(slotCount int) error {
 	if err != nil {
 		return fmt.Errorf("BootstrapCluster failed: %v", err)
 	}
-	// wait self leader
+	// wait self leader. A standalone node promoted at runtime inherits the
+	// configured heartbeat interval (default 15s), so election can take up
+	// to 2x that; the wait must cover it or seed promotion fails.
 	deadline := time.Now().Add(10 * time.Second)
+	if node.Cfg.ElectionTimeout > 10*time.Second {
+		deadline = time.Now().Add(2*node.Cfg.ElectionTimeout + 2*time.Second)
+	}
 	for time.Now().Before(deadline) {
 		if node.State() == raft.Leader {
 			break
