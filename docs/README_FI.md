@@ -164,8 +164,8 @@ Katso [commands.md](https://github.com/Hoverhuang-er/godis/blob/master/commands.
 
 Ymparisto:
 
-Go version: 1.23
-System: MacOS Monterey 12.5 M2 Air
+Go version: 1.26.5 (GreenTea GC)
+System: MacOS 15.7.1 M5 Air ja 2 DGX Spark -solmun klusteri
 
 redis-benchmarkin suorituskykyraportti:
 

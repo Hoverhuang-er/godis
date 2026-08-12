@@ -249,8 +249,8 @@ func main() {
 
 环境:
 
-Go version: 1.23
-System: MacOS Monterey 12.5 M2 Air
+Go version: 1.26.5 (GreenTea GC)
+System: MacOS 15.7.1 M5 Air，以及 2 台 DGX Spark 搭建的集群
 
 redis-benchmark 测试结果:
 

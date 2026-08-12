@@ -988,7 +988,7 @@ See: [commands.md](https://github.com/Hoverhuang-er/godis/blob/master/commands.m
 
 ## Benchmark
 
-Environment: **Go 1.23**, MacOS Monterey 12.5, Apple M2 Air
+Environment: **Go 1.26.5** (GreenTea GC), macOS 15.7.1, Apple M5 Air, plus a cluster built with 2 DGX Spark nodes
 
 ```mermaid
 xychart-beta
