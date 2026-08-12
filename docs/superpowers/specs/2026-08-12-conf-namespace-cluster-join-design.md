@@ -41,7 +41,7 @@ Researched from `apache/kvrocks` source (unstable, 2026-08-12) and https://kvroc
 - Constant `confNamespacePrefix = "conf:"` in a new `internal/database/namespace.go`.
 - Conf keys are ordinary keys in db0's dict named `conf:<setting>`; persistence (AOF/RDB), TTL, and replication machinery apply unchanged.
 - **Filtered from user-facing iteration**: `KEYS`, `SCAN`, `DBSIZE`, `RANDOMKEY`, `FLUSHDB`, `FLUSHALL` never see or clear conf keys.
-- **Write guard**: client `SET`/`MSET`/`RENAME`/etc. targeting a `conf:` key is rejected with `ERR reserved key prefix "conf:"` unless the write originates from the internal config path (whitelisted executor). One guard in SET-family `prepare()`, zero overhead on read paths.
+- **Write guard**: client `SET`/`MSET`/`RENAME`/etc. targeting a `conf:` key is rejected with `ERR reserved key prefix "conf:"`. Internal writes (config bootstrap, `CONFIG SET`, replication application) bypass the guard because they go through the engine's internal exec paths, not the client-facing `prepare()`.
 - Direct reads (`GET conf:x`) are permitted — that is how the engine and operators inspect config.
 
 ### 4.2 Config bootstrap and authority
@@ -49,7 +49,7 @@ Researched from `apache/kvrocks` source (unstable, 2026-08-12) and https://kvroc
 - **Shared vs node-local split (denylist)** — node-local, never stored in the namespace:
   - `server.bind`, `server.port`, `server.dir`, `replication.announce_host`, `replication.slave_announce_port`, `cluster.*` (incl. `cluster_id`, `seed`, `as_seed`, `master_in_cluster`, `join_*`, `raft_*`), `http_api.*`, `web.port`.
 - Everything else is shared (`aof.*`, `security.requirepass`, `security.masterauth`, `slowlog.*`, `monitoring.*`, `server.maxclients`, `server.databases`, `azure.*`, …), stored as `conf:<key>` keys.
-- **First boot (seed)**: `SetupConfig` writes every shared setting into its `conf:` key after parsing the TOML. The namespace becomes the config representation.
+- **Startup (every node)**: `SetupConfig` writes every shared setting into its `conf:` key after parsing the TOML. Because of auto-promotion (D3), a node does not know at first boot whether it will become the seed — so every node maintains its own `conf:` keys locally. When a node joins, its copy is superseded: master-slave full sync replaces db0 wholesale (including `conf:` keys) with the seed's copy; in raft mode all conf access routes to the seed's slot-0 copy.
 - **Later boots**: if a `conf:` key exists, it wins over the file value. The local file supplies node-local values and first-boot defaults only.
 - `CONFIG GET`: read conf key if present, else fall back to in-memory value.
 - `CONFIG SET`: update conf key + in-memory value; if not the seed, forward to the seed first (D2).
@@ -97,7 +97,7 @@ flowchart LR
 | Component | File | Change |
 |---|---|---|
 | Prefix + helpers | `internal/database/namespace.go` (new) | `confNamespacePrefix`, `isConfKey()`, write guard, iteration filters |
-| Bootstrap ↔ conf keys | `internal/config/config.go` | write shared settings on first boot; conf key wins on later boots; shared/local denylist |
+| Bootstrap ↔ conf keys | `internal/config/config.go` | write shared settings at startup; conf key wins on later boots; shared/local denylist |
 | `CONFIG GET/SET/REWRITE` mapping | `internal/database/systemcmd.go` | GET conf-key-first; SET writes conf key + forwards to seed if not seed |
 | `PromoteToSeed()` | `internal/cluster/hotswitch.go` | standalone→seed auto-promote, mutex-guarded, idempotent |
 | `cluster.join` intercept (standalone) | `internal/database/server.go` | unknown-command hook → `PromoteToSeed()` → cluster `execJoin` |
