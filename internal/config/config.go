@@ -2,10 +2,13 @@ package config
 
 import (
 	_ "embed"
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -527,6 +530,165 @@ func setTomlKey(content, section, key, value string) string {
 		out = append(out, "", sectionHeader, key+" = "+strconv.Quote(value))
 	}
 	return strings.Join(out, "\n")
+}
+
+// nodeLocalParams are settings that must stay on the local config file and
+// are never replicated through the conf namespace.
+var nodeLocalParams = map[string]bool{
+	"runid": true, "bind": true, "port": true, "dir": true,
+	"announce-host": true, "slave-announce-port": true, "slave-announce-ip": true,
+	"use-gnet": true, "data-dir": true,
+	"cluster-enable": true, "cluster-as-seed": true, "cluster-seed": true,
+	"cluster-join-http": true, "cluster-join-http-token": true, "cluster-id": true,
+	"raft-listen-address": true, "raft-advertise-address": true, "master-in-cluster": true,
+	"cluster-worker-pool": true, "cluster-relay-parallel": true,
+	"cluster-heartbeat-interval": true, "cluster-failover-max-failures": true,
+	"cluster-max-version-gap": true, "cluster-sync-via-oss": true, "cluster-snapshot-interval": true,
+	"oss-enabled": true, "oss-endpoint": true, "oss-bucket": true,
+	"oss-access-key-id": true, "oss-secret-access-key": true, "oss-region": true,
+	"oss-prefix": true, "oss-use-ssl": true, "oss-force-path-style": true,
+	"http-api-enabled": true, "http-api-port": true, "http-api-host": true,
+	"web-port": true,
+	"sentinel-enabled": true, "sentinel-port": true, "sentinel-monitors": true,
+}
+
+// IsNodeLocalParam reports whether a cfg-tag parameter is node-local.
+func IsNodeLocalParam(name string) bool {
+	return nodeLocalParams[name]
+}
+
+// paramSection maps a cfg-tag parameter name to its TOML section for
+// CONFIG REWRITE.
+var paramSection = map[string]string{
+	"bind": "server", "port": "server", "dir": "server", "databases": "server",
+	"maxclients": "server", "runid": "server", "use-gnet": "server", "data-dir": "server",
+	"appendonly": "aof", "appendfilename": "aof", "appendfsync": "aof",
+	"aof-use-rdb-preamble": "aof", "dbfilename": "aof",
+	"requirepass": "security", "masterauth": "security",
+	"repl-timeout": "replication", "announce-host": "replication",
+	"slave-announce-port": "replication", "slave-announce-ip": "replication",
+	"slowlog-log-slower-than": "slowlog", "slowlog-max-len": "slowlog",
+	"prometheus-enabled": "monitoring", "prometheus-port": "monitoring",
+	"azure-entra-tenant-id": "azure", "azure-entra-app-id": "azure",
+	"cluster-enable": "cluster", "cluster-as-seed": "cluster", "cluster-seed": "cluster",
+	"cluster-join-http": "cluster", "cluster-join-http-token": "cluster", "cluster-id": "cluster",
+	"raft-listen-address": "cluster", "raft-advertise-address": "cluster", "master-in-cluster": "cluster",
+	"cluster-worker-pool": "cluster", "cluster-relay-parallel": "cluster",
+	"cluster-heartbeat-interval": "cluster", "cluster-failover-max-failures": "cluster",
+	"cluster-max-version-gap": "cluster", "cluster-sync-via-oss": "cluster", "cluster-snapshot-interval": "cluster",
+	"oss-enabled": "oss", "oss-endpoint": "oss", "oss-bucket": "oss",
+	"oss-access-key-id": "oss", "oss-secret-access-key": "oss", "oss-region": "oss",
+	"oss-prefix": "oss", "oss-use-ssl": "oss", "oss-force-path-style": "oss",
+	"http-api-enabled": "http_api", "http-api-port": "http_api", "http-api-host": "http_api",
+	"web-port": "web",
+	"sentinel-enabled": "sentinel", "sentinel-port": "sentinel",
+}
+
+// allParams returns every cfg-tagged scalar parameter (name -> current value).
+func allParams() map[string]string {
+	entries := map[string]string{}
+	t := reflect.TypeOf(*Properties)
+	v := reflect.ValueOf(*Properties)
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		name := f.Tag.Get("cfg")
+		if name == "" || name == "-" {
+			continue
+		}
+		if v.Field(i).Kind() == reflect.Slice {
+			continue
+		}
+		entries[name] = fmt.Sprint(v.Field(i).Interface())
+	}
+	return entries
+}
+
+// SharedConfigEntries returns the shared (non node-local) parameters with
+// their current values, keyed by cfg-tag name.
+func SharedConfigEntries() map[string]string {
+	entries := map[string]string{}
+	for name, value := range allParams() {
+		if !nodeLocalParams[name] {
+			entries[name] = value
+		}
+	}
+	return entries
+}
+
+// AllParams returns every scalar parameter with its current value,
+// including node-local ones.
+func AllParams() map[string]string {
+	return allParams()
+}
+
+// SetParameter updates a shared parameter in Properties by cfg-tag name.
+// Node-local and unknown parameters are rejected.
+func SetParameter(name, value string) error {
+	if nodeLocalParams[name] {
+		return fmt.Errorf("CONFIG SET is not supported for node-local parameter '%s'", name)
+	}
+	t := reflect.TypeOf(*Properties)
+	v := reflect.ValueOf(Properties).Elem()
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.Tag.Get("cfg") != name {
+			continue
+		}
+		field := v.Field(i)
+		switch field.Kind() {
+		case reflect.String:
+			field.SetString(value)
+		case reflect.Bool:
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				if strings.EqualFold(value, "yes") {
+					b = true
+				} else if strings.EqualFold(value, "no") {
+					b = false
+				} else {
+					return fmt.Errorf("invalid boolean value '%s' for parameter '%s'", value, name)
+				}
+			}
+			field.SetBool(b)
+		case reflect.Int, reflect.Int64:
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("invalid integer value '%s' for parameter '%s'", value, name)
+			}
+			field.SetInt(int64(n))
+		default:
+			return fmt.Errorf("unsupported parameter type for '%s'", name)
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown parameter '%s'", name)
+}
+
+// RewriteConfigFile persists the current effective configuration back to
+// the active config file, preserving its structure via setTomlKey.
+func RewriteConfigFile() error {
+	if configFilePath == "" {
+		return errors.New("no config file loaded")
+	}
+	content, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return err
+	}
+	t := reflect.TypeOf(*Properties)
+	v := reflect.ValueOf(*Properties)
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		name := f.Tag.Get("cfg")
+		if name == "" || name == "-" {
+			continue
+		}
+		section, ok := paramSection[name]
+		if !ok || v.Field(i).Kind() == reflect.Slice {
+			continue
+		}
+		content = []byte(setTomlKey(string(content), section, f.Tag.Get("toml"), fmt.Sprint(v.Field(i).Interface())))
+	}
+	return os.WriteFile(configFilePath, content, 0o644)
 }
 
 // DetectConfigFile finds the appropriate config file.
