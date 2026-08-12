@@ -74,3 +74,32 @@ func TestConfKeysHiddenFromIteration(t *testing.T) {
 		}
 	}
 }
+
+func TestFlushDBPreservesConfKeys(t *testing.T) {
+	server := NewStandaloneServer()
+	conn := connection.NewFakeConn()
+	db := server.mustSelectDB(0)
+	db.PutEntity("conf:x", &database.DataEntity{Data: []byte("v")})
+	db.PutEntity("user", &database.DataEntity{Data: []byte("v")})
+
+	ret := server.Exec(conn, utils.ToCmdLine("FLUSHDB"))
+	asserts.AssertNotError(t, ret)
+
+	if _, ok := server.mustSelectDB(0).GetEntity("conf:x"); !ok {
+		t.Fatal("conf key lost by FLUSHDB")
+	}
+	if _, ok := server.mustSelectDB(0).GetEntity("user"); ok {
+		t.Fatal("user key survived FLUSHDB")
+	}
+}
+
+func TestDBSizeExcludesConfKeys(t *testing.T) {
+	server := NewStandaloneServer()
+	conn := connection.NewFakeConn()
+	db := server.mustSelectDB(0)
+	db.PutEntity("conf:x", &database.DataEntity{Data: []byte("v")})
+	db.PutEntity("user", &database.DataEntity{Data: []byte("v")})
+
+	ret := server.Exec(conn, utils.ToCmdLine("DBSIZE"))
+	asserts.AssertIntReply(t, ret, 1)
+}

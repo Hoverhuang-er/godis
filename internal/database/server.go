@@ -492,7 +492,18 @@ func (server *Server) flushDB(dbIndex int) redis.Reply {
 	if dbIndex >= len(server.dbSet) || dbIndex < 0 {
 		return protocol.MakeErrReply("ERR DB index is out of range")
 	}
+	oldDB := server.mustSelectDB(dbIndex)
 	newDB := makeDB()
+	// conf namespace is config, not data: it survives FLUSHDB/FLUSHALL
+	oldDB.data.ForEach(func(key string, val interface{}) bool {
+		if IsConfKey(key) {
+			newDB.PutEntity(key, val.(*database.DataEntity))
+			if raw, ok := oldDB.ttlMap.Get(key); ok {
+				newDB.Expire(key, raw.(time.Time))
+			}
+		}
+		return true
+	})
 	server.loadDB(dbIndex, newDB)
 	return &protocol.OkReply{}
 }
@@ -646,6 +657,21 @@ func BGSaveRDB(db *Server, args [][]byte) redis.Reply {
 func (server *Server) GetDBSize(dbIndex int) (int, int) {
 	db := server.mustSelectDB(dbIndex)
 	return db.data.Len(), db.ttlMap.Len()
+}
+
+// GetUserDBSize returns the non-conf key count and ttl count of a database.
+// ponytail: O(n) scan to exclude conf keys; switch to an atomic counter if
+// DBSIZE ever becomes hot.
+func (server *Server) GetUserDBSize(dbIndex int) (int, int) {
+	db := server.mustSelectDB(dbIndex)
+	keys := 0
+	db.data.ForEach(func(key string, val interface{}) bool {
+		if !IsConfKey(key) {
+			keys++
+		}
+		return true
+	})
+	return keys, db.ttlMap.Len()
 }
 
 func (server *Server) startReplCron() {

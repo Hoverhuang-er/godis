@@ -95,7 +95,7 @@ func isAuthenticated(c redis.Connection) bool {
 }
 
 func DbSize(c redis.Connection, db *Server) redis.Reply {
-	keys, _ := db.GetDBSize(c.GetDBIndex())
+	keys, _ := db.GetUserDBSize(c.GetDBIndex())
 	return protocol.MakeIntReply(int64(keys))
 }
 
@@ -158,7 +158,7 @@ func GenGodisInfoString(section string, db *Server) []byte {
 		dbCount := config.Properties.Databases
 		var serv []byte
 		for i := 0; i < dbCount; i++ {
-			keys, expiresKeys := db.GetDBSize(i)
+			keys, expiresKeys := db.GetUserDBSize(i)
 			if keys != 0 {
 				ttlSampleAverage := db.GetAvgTTL(i, 20)
 				serv = append(serv, getDbSize(i, keys, expiresKeys, ttlSampleAverage)...)
