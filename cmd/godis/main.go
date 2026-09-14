@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Hoverhuang-er/godis/internal/ai"
 	"github.com/Hoverhuang-er/godis/internal/cluster"
 	"github.com/Hoverhuang-er/godis/internal/config"
 	"github.com/Hoverhuang-er/godis/internal/database"
@@ -24,6 +25,22 @@ import (
 	"github.com/Hoverhuang-er/godis/internal/web"
 	"log/slog"
 )
+
+// setupAI installs the embedding backend from the [ai] config section. A bad
+// HTTP provider setting is fatal rather than silently downgraded to the local
+// embedder, because the two produce incomparable vectors and mixing them would
+// corrupt an existing index.
+func setupAI() {
+	opts := ai.OptionsFromConfig(config.Properties)
+	embedder, err := ai.NewEmbedder(opts)
+	if err != nil {
+		slog.Error("invalid [ai] embedding configuration: " + err.Error())
+		os.Exit(1)
+	}
+	ai.SetEmbedder(embedder)
+	ai.SetChunkOptions(ai.ChunkOptions{Size: opts.Size, Overlap: opts.Overlap})
+	slog.Info("AI embedder ready", "provider", embedder.Name(), "dim", embedder.Dim())
+}
 
 var banner = `
    ______          ___
@@ -144,16 +161,20 @@ func main() {
 	}
 	listenAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
 
+	// The embedding backend serves the knowledge-base commands and must be in
+	// place before the first client can issue one.
+	setupAI()
+
 	var shutdownDB idatabase.DB
 	stopCh := make(chan struct{})
 
-	web.RegisterClusterStatusFn(func() (map[string]interface{}, bool) {
+	web.RegisterClusterStatusFn(func() (map[string]any, bool) {
 		cl := cluster.Current()
 		if cl == nil {
 			return nil, false
 		}
 		stats := cl.ClusterStats()
-		return map[string]interface{}{
+		return map[string]any{
 			"enabled":           stats.Enabled,
 			"cluster_id":        config.Properties.ClusterID,
 			"mode":              stats.Mode,

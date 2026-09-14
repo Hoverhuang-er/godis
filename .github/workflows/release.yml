@@ -41,7 +41,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.27'
           cache: true
           cache-dependency-path: go.sum
 
@@ -283,13 +283,21 @@ jobs:
           body: |
             ## godis ${{ github.ref_name }}
 
-            Redis 8.8.0 compatible server with RediSearch, Redis-Vector, and Time Series support.
+            Redis 8.8.0 compatible server with vector search, hybrid search, and a server-side knowledge base.
+
+            ### Highlights
+            - **Vector and hybrid search** — `FT.CREATE ON JSON`, dialect-2 queries with pre-filters, `FT.HYBRID` with RRF/linear fusion, binary and text query vectors
+            - **Knowledge base served by the database** — `RAG.*` chunks, embeds and retrieves in-process, so `redis-cli RAG.QUERY` works with no client library
+            - **LLM wiki** — `WIKI.*` keeps interlinked pages with a maintained link graph, generated index and log, lint, and markdown export
+            - **Agent memory and semantic cache** — `MEMORY.*` for session recall, `LLMCACHE.*` for reworded prompts
+            - **Go 1.27**
 
             ### What's Included
             - 7 binary archives (linux/amd64,arm64,riscv64 + windows/amd64,arm64 + darwin/amd64,arm64)
             - Docker image: ghcr.io/${{ github.repository }}:{{version}}
             - Operator image: ghcr.io/${{ github.repository }}/operator:{{version}}
             - Helm chart: oci://ghcr.io/${{ github.repository }}/charts/godis:{{version}}
+            - Docs: https://hoverhuang-er.github.io/godis/
           files: |
             artifacts/*/*.zip
             CHANGELOGS-latest.md

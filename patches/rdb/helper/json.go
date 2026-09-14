@@ -23,7 +23,7 @@ func WithConcurrent(c int) ConcurrentOption {
 }
 
 // ToJsons read rdb file and convert to json file
-func ToJsons(rdbFilename string, jsonFilename string, options ...interface{}) error {
+func ToJsons(rdbFilename string, jsonFilename string, options ...any) error {
 	if rdbFilename == "" {
 		return errors.New("src file path is required")
 	}

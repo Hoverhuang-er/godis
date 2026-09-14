@@ -10,7 +10,7 @@ var (
 	ErrMax    = errors.New("reach max connection limit")
 )
 
-type request chan interface{}
+type request chan any
 
 type Config struct {
 	MaxIdle   uint
@@ -20,20 +20,20 @@ type Config struct {
 // Pool stores object for reusing, such as redis connection
 type Pool struct {
 	Config
-	factory     func() (interface{}, error)
-	finalizer   func(x interface{})
-	idles       chan interface{}
+	factory     func() (any, error)
+	finalizer   func(x any)
+	idles       chan any
 	waitingReqs []request
 	activeCount uint // increases during creating connection, decrease during destroying connection
 	mu          sync.Mutex
 	closed      bool
 }
 
-func New(factory func() (interface{}, error), finalizer func(x interface{}), cfg Config) *Pool {
+func New(factory func() (any, error), finalizer func(x any), cfg Config) *Pool {
 	return &Pool{
 		factory:     factory,
 		finalizer:   finalizer,
-		idles:       make(chan interface{}, cfg.MaxIdle),
+		idles:       make(chan any, cfg.MaxIdle),
 		waitingReqs: make([]request, 0),
 		Config:      cfg,
 	}
@@ -41,11 +41,11 @@ func New(factory func() (interface{}, error), finalizer func(x interface{}), cfg
 
 // getOnNoIdle try to create a new connection or waiting for connection being returned
 // invoker should have pool.mu
-func (pool *Pool) getOnNoIdle() (interface{}, error) {
+func (pool *Pool) getOnNoIdle() (any, error) {
 	pool.mu.Lock()
 	if pool.activeCount >= pool.MaxActive {
 		// waiting for connection being returned
-		req := make(chan interface{}, 1)
+		req := make(chan any, 1)
 		pool.waitingReqs = append(pool.waitingReqs, req)
 		pool.mu.Unlock()
 		x, ok := <-req
@@ -69,7 +69,7 @@ func (pool *Pool) getOnNoIdle() (interface{}, error) {
 	return x, nil
 }
 
-func (pool *Pool) Get() (interface{}, error) {
+func (pool *Pool) Get() (any, error) {
 	pool.mu.Lock()
 	if pool.closed {
 		pool.mu.Unlock()
@@ -86,7 +86,7 @@ func (pool *Pool) Get() (interface{}, error) {
 	}
 }
 
-func (pool *Pool) Put(x interface{}) {
+func (pool *Pool) Put(x any) {
 	pool.mu.Lock()
 
 	if pool.closed {

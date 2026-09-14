@@ -89,15 +89,15 @@ type EvictionInfo interface {
 
 // BaseObject is basement of redis object
 type BaseObject struct {
-	DB         int         `json:"db"`                   // DB is db index of redis object
-	Key        string      `json:"key"`                  // Key is key of redis object
-	Expiration *time.Time  `json:"expiration,omitempty"` // Expiration is expiration time, expiration of persistent object is nil
-	Size       int         `json:"size"`                 // Size is rdb value size in Byte
-	Type       string      `json:"type"`                 // Type is one of string/list/set/hash/zset
-	Encoding   string      `json:"encoding"`             // Encoding is the exact encoding method
-	Extra      interface{} `json:"-"`                    // Extra stores more detail of encoding for memory profiler and other usages
-	IdleTime   *int64      `json:"lru,omitempty"`
-	Freq       *int64      `json:"lfu,omitempty"`
+	DB         int        `json:"db"`                   // DB is db index of redis object
+	Key        string     `json:"key"`                  // Key is key of redis object
+	Expiration *time.Time `json:"expiration,omitempty"` // Expiration is expiration time, expiration of persistent object is nil
+	Size       int        `json:"size"`                 // Size is rdb value size in Byte
+	Type       string     `json:"type"`                 // Type is one of string/list/set/hash/zset
+	Encoding   string     `json:"encoding"`             // Encoding is the exact encoding method
+	Extra      any        `json:"-"`                    // Extra stores more detail of encoding for memory profiler and other usages
+	IdleTime   *int64     `json:"lru,omitempty"`
+	Freq       *int64     `json:"lfu,omitempty"`
 }
 
 // GetKey returns key of object
@@ -352,7 +352,7 @@ func (o *DBSizeObject) GetType() string {
 type ModuleTypeObject struct {
 	*BaseObject
 	ModuleType string
-	Value      interface{}
+	Value      any
 }
 
 // GetType returns module type name
@@ -364,8 +364,8 @@ func (o *ModuleTypeObject) GetType() string {
 func (o *ModuleTypeObject) MarshalJSON() ([]byte, error) {
 	o2 := struct {
 		*BaseObject
-		ModuleType string      `json:"moduleType"`
-		Value      interface{} `json:"value"`
+		ModuleType string `json:"moduleType"`
+		Value      any    `json:"value"`
 	}{
 		BaseObject: o.BaseObject,
 		ModuleType: o.ModuleType,

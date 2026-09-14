@@ -15,7 +15,7 @@ import (
 
 // PrefixAnalyse read rdb file and find the largest N keys.
 // The invoker owns output, FindBiggestKeys won't close it
-func PrefixAnalyse(rdbFilename string, topN int, maxDepth int, output *os.File, options ...interface{}) error {
+func PrefixAnalyse(rdbFilename string, topN int, maxDepth int, output *os.File, options ...any) error {
 	if rdbFilename == "" {
 		return errors.New("src file path is required")
 	}
@@ -53,7 +53,7 @@ func PrefixAnalyse(rdbFilename string, topN int, maxDepth int, output *os.File, 
 	if err != nil {
 		return err
 	}
-	
+
 	// get top list
 	toplist := newToplist(topN)
 	tree.traverse(func(node *radixNode, depth int) bool {

@@ -276,12 +276,12 @@ func aggregateSamples(samples []Sample, aggregation string, bucketDuration int64
 }
 
 // Info returns metadata about the time series as a map
-func (ts *TimeSeries) Info() map[string]interface{} {
+func (ts *TimeSeries) Info() map[string]any {
 	slog.Debug("TimeSeries.Info", "key", ts.key)
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 
-	info := make(map[string]interface{})
+	info := make(map[string]any)
 	info["totalSamples"] = len(ts.samples)
 	if len(ts.samples) > 0 {
 		info["firstTimestamp"] = ts.samples[0].Timestamp
@@ -322,8 +322,8 @@ type MultiEntry struct {
 }
 
 var (
-	globalTSMu   sync.RWMutex
-	globalTS     = make(map[string]*TimeSeries)
+	globalTSMu sync.RWMutex
+	globalTS   = make(map[string]*TimeSeries)
 )
 
 // RegisterTimeSeries registers a time series in the global registry by key

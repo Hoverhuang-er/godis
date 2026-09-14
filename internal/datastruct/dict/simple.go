@@ -6,18 +6,18 @@ import (
 
 // SimpleDict wraps a map, it is not thread safe
 type SimpleDict struct {
-	m map[string]interface{}
+	m map[string]any
 }
 
 // MakeSimple makes a new map
 func MakeSimple() *SimpleDict {
 	return &SimpleDict{
-		m: make(map[string]interface{}),
+		m: make(map[string]any),
 	}
 }
 
 // Get returns the binding value and whether the key is exist
-func (dict *SimpleDict) Get(key string) (val interface{}, exists bool) {
+func (dict *SimpleDict) Get(key string) (val any, exists bool) {
 	val, ok := dict.m[key]
 	return val, ok
 }
@@ -31,7 +31,7 @@ func (dict *SimpleDict) Len() int {
 }
 
 // Put puts key value into dict and returns the number of new inserted key-value
-func (dict *SimpleDict) Put(key string, val interface{}) (result int) {
+func (dict *SimpleDict) Put(key string, val any) (result int) {
 	_, existed := dict.m[key]
 	dict.m[key] = val
 	if existed {
@@ -41,7 +41,7 @@ func (dict *SimpleDict) Put(key string, val interface{}) (result int) {
 }
 
 // PutIfAbsent puts value if the key is not exists and returns the number of updated key-value
-func (dict *SimpleDict) PutIfAbsent(key string, val interface{}) (result int) {
+func (dict *SimpleDict) PutIfAbsent(key string, val any) (result int) {
 	_, existed := dict.m[key]
 	if existed {
 		return 0
@@ -51,7 +51,7 @@ func (dict *SimpleDict) PutIfAbsent(key string, val interface{}) (result int) {
 }
 
 // PutIfExists puts value if the key is existed and returns the number of inserted key-value
-func (dict *SimpleDict) PutIfExists(key string, val interface{}) (result int) {
+func (dict *SimpleDict) PutIfExists(key string, val any) (result int) {
 	_, existed := dict.m[key]
 	if existed {
 		dict.m[key] = val
@@ -61,7 +61,7 @@ func (dict *SimpleDict) PutIfExists(key string, val interface{}) (result int) {
 }
 
 // Remove removes the key and return the number of deleted key-value
-func (dict *SimpleDict) Remove(key string) (val interface{}, result int) {
+func (dict *SimpleDict) Remove(key string) (val any, result int) {
 	val, existed := dict.m[key]
 	delete(dict.m, key)
 	if existed {

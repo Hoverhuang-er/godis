@@ -68,11 +68,11 @@ func (s *ApiServer) handleClusterJoin(w http.ResponseWriter, r *http.Request) {
 // clusterStatusFn reports live cluster state for GET /api/cluster/status.
 // It is wired up by main via RegisterClusterStatusFn so the web package
 // stays decoupled from the cluster package.
-var clusterStatusFn func() (map[string]interface{}, bool)
+var clusterStatusFn func() (map[string]any, bool)
 
 // RegisterClusterStatusFn registers the callback that reports cluster state
 // on GET /api/cluster/status.
-func RegisterClusterStatusFn(fn func() (map[string]interface{}, bool)) {
+func RegisterClusterStatusFn(fn func() (map[string]any, bool)) {
 	clusterStatusFn = fn
 }
 
@@ -83,7 +83,7 @@ func (s *ApiServer) handleClusterStatus(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "only GET allowed"})
 		return
 	}
-	status := map[string]interface{}{
+	status := map[string]any{
 		"enabled":    config.Properties.ClusterEnable,
 		"cluster_id": config.Properties.ClusterID,
 		"mode":       "standalone",

@@ -1,0 +1,84 @@
+name: Docs Site
+
+# Builds and publishes the documentation site from docs/githubio.
+#
+# Triggers on any change under docs/githubio, on the workflow itself, and on
+# demand. The site is rebuilt from markdown on every push, so editing a page in
+# docs/githubio is the only step needed to update it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/githubio/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once, and never cancel one mid-flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      # Jekyll is the GitHub Pages native toolchain: markdown in docs/githubio
+      # becomes HTML with no generator to install and no build config to keep in
+      # sync. jekyll-relative-links turns .md links into .html ones.
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs/githubio
+          destination: ./_site
+
+      - name: Fail on unresolved relative links
+        run: |
+          # A broken internal link is a documentation bug; catch it at build time
+          # rather than shipping a 404. Only same-site links are checked.
+          missing=0
+          while IFS= read -r page; do
+            while IFS= read -r target; do
+              [ -z "$target" ] && continue
+              case "$target" in
+                http*|mailto:*|\#*|/*) continue ;;
+              esac
+              base="${target%%#*}"
+              [ -z "$base" ] && continue
+              if [ ! -f "docs/githubio/${base}" ] && [ ! -f "docs/githubio/${base}.md" ]; then
+                echo "::error file=docs/githubio/${page}::relative link '${target}' does not resolve"
+                missing=$((missing + 1))
+              fi
+            done < <(grep -oE '\]\([^)]+\)' "docs/githubio/${page}" | sed 's/^](//; s/)$//' || true)
+          done < <(cd docs/githubio && find . -name '*.md' | sed 's|^\./||')
+          if [ "$missing" -gt 0 ]; then
+            echo "Found ${missing} unresolved relative link(s)"
+            exit 1
+          fi
+          echo "All relative links resolve"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+
+  deploy:
+    name: Deploy site
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -86,7 +86,6 @@ func (h *Handler) closeClient(client *connection.Connection) {
 	h.activeConn.Delete(client)
 }
 
-
 // Handle receives and executes redis commands
 func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 	if h.closing.Get() {
@@ -145,7 +144,7 @@ func (h *Handler) Close() error {
 	slog.Info("handler shutting down...")
 	h.closing.Set(true)
 	// TODO: concurrent wait
-	h.activeConn.Range(func(key interface{}, val interface{}) bool {
+	h.activeConn.Range(func(key any, val any) bool {
 		client := key.(*connection.Connection)
 		_ = client.Close()
 		return true

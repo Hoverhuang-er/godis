@@ -50,7 +50,7 @@ func newHotKeyList(cap int) *hotKeyList {
 //
 // Keys without LFU information are skipped.
 // The invoker owns output, FindHotKeys won't close it.
-func FindHotKeys(rdbFilename string, topN int, output *os.File, options ...interface{}) error {
+func FindHotKeys(rdbFilename string, topN int, output *os.File, options ...any) error {
 	if rdbFilename == "" {
 		return errors.New("src file path is required")
 	}

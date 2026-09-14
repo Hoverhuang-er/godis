@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	Array "github.com/Hoverhuang-er/godis/internal/datastruct/array"
 	"github.com/Hoverhuang-er/godis/internal/config"
+	Array "github.com/Hoverhuang-er/godis/internal/datastruct/array"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/dict"
 	List "github.com/Hoverhuang-er/godis/internal/datastruct/list"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/set"
@@ -137,7 +137,7 @@ func (persister *Persister) generateRDB(ctx *RewriteCtx) error {
 		// dump db
 		var err2 error
 		tmpHandler.db.ForEach(i, func(key string, entity *database.DataEntity, expiration *time.Time) bool {
-			var opts []interface{}
+			var opts []any
 			if expiration != nil {
 				opts = append(opts, rdb.WithTTL(uint64(expiration.UnixNano()/1e6)))
 			}
@@ -146,7 +146,7 @@ func (persister *Persister) generateRDB(ctx *RewriteCtx) error {
 				err = encoder.WriteStringObject(key, obj, opts...)
 			case List.List:
 				vals := make([][]byte, 0, obj.Len())
-				obj.ForEach(func(i int, v interface{}) bool {
+				obj.ForEach(func(i int, v any) bool {
 					bytes, _ := v.([]byte)
 					vals = append(vals, bytes)
 					return true
@@ -161,7 +161,7 @@ func (persister *Persister) generateRDB(ctx *RewriteCtx) error {
 				err = encoder.WriteSetObject(key, vals, opts...)
 			case dict.Dict:
 				hash := make(map[string][]byte)
-				obj.ForEach(func(key string, val interface{}) bool {
+				obj.ForEach(func(key string, val any) bool {
 					bytes, _ := val.([]byte)
 					hash[key] = bytes
 					return true

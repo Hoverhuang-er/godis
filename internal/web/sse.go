@@ -240,6 +240,7 @@ func (h *SseHub) handlePushMessage(reply interface{ ToBytes() []byte }) {
 	message := string(lines[2])
 	h.broadcast(channel, message)
 }
+
 // handleSubscribe is the SSE endpoint: GET /api/subscribe?channels=ch1,ch2
 func (s *ApiServer) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	if defaultSseHub == nil {
@@ -443,7 +444,7 @@ func (s *ApiServer) handlePipeline(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, pipelineResponse{Results: results})
 }
 
-func mustMarshal(v interface{}) []byte {
+func mustMarshal(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
 }

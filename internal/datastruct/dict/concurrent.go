@@ -43,7 +43,7 @@ func MakeConcurrent(shardCount int) *ConcurrentDict {
 	if shardCount == 1 {
 		table := []*shard{
 			{
-				m: make(map[string]interface{}),
+				m: make(map[string]any),
 			},
 		}
 		return &ConcurrentDict{
@@ -56,7 +56,7 @@ func MakeConcurrent(shardCount int) *ConcurrentDict {
 	table := make([]*shard, shardCount)
 	for i := 0; i < shardCount; i++ {
 		table[i] = &shard{
-			m: make(map[string]interface{}),
+			m: make(map[string]any),
 		}
 	}
 	d := &ConcurrentDict{

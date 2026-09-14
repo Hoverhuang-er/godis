@@ -28,16 +28,16 @@ type PoolConfig struct {
 
 // ipPool tracks connections to a single remote IP.
 type ipPool struct {
-	conns       []*pooledConn
-	maxSize     int32
-	inUse       int32
-	mu          sync.Mutex
+	conns   []*pooledConn
+	maxSize int32
+	inUse   int32
+	mu      sync.Mutex
 }
 
 type pooledConn struct {
-	conn      net.Conn
-	lastUsed  time.Time
-	inUse     bool
+	conn     net.Conn
+	lastUsed time.Time
+	inUse    bool
 }
 
 // DefaultPoolConfig returns default pooling configuration.
@@ -202,11 +202,11 @@ func (cp *ConnPool) CloseIdle() {
 }
 
 // Stats returns pool statistics for monitoring.
-func (cp *ConnPool) Stats() map[string]interface{} {
+func (cp *ConnPool) Stats() map[string]any {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"total_pools": len(cp.pools),
 	}
 	var totalConns, totalInUse int32

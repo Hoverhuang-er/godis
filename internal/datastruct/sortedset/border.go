@@ -23,7 +23,7 @@ const (
 type Border interface {
 	greater(element *Element) bool
 	less(element *Element) bool
-	getValue() interface{}
+	getValue() any
 	getExclude() bool
 	isIntersected(max Border) bool
 }
@@ -63,7 +63,7 @@ func (border *ScoreBorder) less(element *Element) bool {
 	return border.Value <= value
 }
 
-func (border *ScoreBorder) getValue() interface{} {
+func (border *ScoreBorder) getValue() any {
 	return border.Value
 }
 
@@ -150,7 +150,7 @@ func (border *LexBorder) less(element *Element) bool {
 	return border.Value <= value
 }
 
-func (border *LexBorder) getValue() interface{} {
+func (border *LexBorder) getValue() any {
 	return border.Value
 }
 

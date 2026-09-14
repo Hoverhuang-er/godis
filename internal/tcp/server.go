@@ -33,7 +33,7 @@ func InitPool() {
 	handlerPool, err = ants.NewPool(300,
 		ants.WithPreAlloc(true),
 		ants.WithNonblocking(false),
-		ants.WithPanicHandler(func(err interface{}) {
+		ants.WithPanicHandler(func(err any) {
 			slog.Error("tcp handler pool panic", "error", err)
 		}),
 	)

@@ -262,7 +262,7 @@ func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	runtime.ReadMemStats(&memStats)
 
 	bi, ok := debug.ReadBuildInfo()
-	version := "1.3.4"
+	version := "1.3.5"
 	if ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
 		version = bi.Main.Version
 	}

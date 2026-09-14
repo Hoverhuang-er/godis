@@ -1,4 +1,4 @@
-# Godis v1.3.2
+# Godis v1.3.5
 
 ![license](https://img.shields.io/github/license/Hoverhuang-er/godis)
 [![Build Status](https://github.com/Hoverhuang-er/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/Hoverhuang-er/godis/actions?query=branch%3Amaster)
@@ -10,15 +10,23 @@
 
 [English](https://github.com/Hoverhuang-er/godis/blob/master/docs/README.md) | [中文版](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_CN.md) | [Suomi](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_FI.md)
 
+📖 **[ドキュメント](https://hoverhuang-er.github.io/godis/)**
+
+
 `Godis` は Go 言語で実装された Redis サーバーです。Go 言語を使って高並行ミドルウェアを開発するための参考例を提供することを目的としています。
 
 主な機能:
 
 - Redis 8.8.0 コマンド互換性
 - string, list, hash, set, sorted set, bitmap データ構造をサポート
-- RediSearch (FT.CREATE, FT.SEARCH, FT.DROPINDEX など)
+- RediSearch (FT.CREATE, FT.SEARCH, FT.HYBRID, FT.DROPINDEX など)
 - Time Series (TS.CREATE, TS.ADD, TS.GET, TS.RANGE など)
-- Redis-Vector (VECTOR フィールド型, KNN 検索)
+- Redis-Vector (VECTOR フィールド型, KNN 検索とハイブリッド検索, JSON インデックス)
+- サーバー側で提供するナレッジベース。クライアントライブラリ不要で `redis-cli` から直接利用可能:
+  - RAG (RAG.INGEST / RAG.QUERY — チャンク分割、埋め込み、検索、引用付きコンテキスト)
+  - LLM wiki (WIKI.* — 相互リンクされたページ、リンクグラフ、index/log の自動生成、lint)
+  - エージェントメモリ (MEMORY.ADD / MEMORY.GET / MEMORY.SEARCH)
+  - セマンティック回答キャッシュ (LLMCACHE.GET / LLMCACHE.SET)
 - 高パフォーマンスの並行処理コア
 - TTL (自動有効期限)
 - パブリッシュ/サブスクライブ
@@ -32,6 +40,46 @@
   - Raft ベースのクラスターメタデータ管理。動的拡張、リバランシング、フェイルオーバーをサポート
   - `MSET`, `MSETNX`, `DEL`, `Rename`, `RenameNX` コマンドはクラスターモードでアトミックに実行され、複数ノードにまたがるキーをサポート
   - `MULTI` トランザクションはスロット内でサポート
+
+## v1.3.5 の新機能
+
+全文検索、ベクトル検索、ハイブリッド検索に加え、サーバー自身が提供するナレッジベース。
+
+**検索 (`FT.*`)**
+
+- `FT.CREATE` は `ON HASH` に加えて `ON JSON` に対応し、`AS` 別名と JSON パスフィールド（`$.features[*]` など）を扱えます。
+- dialect-2 のクエリ構文を正しく解析します: プリフィルタ、`@tag:{a|b}`、`@num:[min max]`、否定、和集合、`SORTBY`、`RETURN` による射影、`LIMIT`、`FILTER`、`WITHSCORES`。
+- クエリベクトルは Redis クライアントが実際に送るリトルエンディアンの生 `FLOAT32` バイト列でも、テキスト形式でも受け付けます。
+- `FT.HYBRID` を新規追加: `SEARCH` 句と `VSIM` 句を、既定では RRF（順位融合）で統合します。`COMBINE LINEAR` も選択できます。
+- `FT.CREATE` は既存データをバックフィルするため、データ投入後にインデックスを作成しても即座に検索できます。
+
+**RAG (`RAG.*`)** — チャンク分割・埋め込み・検索はすべてサーバー内で実行されるため、`redis-cli` だけでナレッジベースを検索できます:
+
+```
+redis> RAG.INGEST kb doc-1 "HNSW は階層的な近接グラフを構築する。再現率と構築時間はトレードオフの関係にある。" TITLE "HNSW" SOURCE handbook.md TAG vectors
+1
+redis> RAG.QUERY kb "再現率と構築時間はどうトレードオフされる？" K 3
+# Retrieved context
+
+Query: 再現率と構築時間はどうトレードオフされる？
+
+### [1] HNSW
+_source: handbook.md · similarity: 0.624 · kb:doc-1 · chunk 0_
+
+HNSW は階層的な近接グラフを構築する。再現率と構築時間はトレードオフの関係にある。
+```
+
+回答の生成は呼び出し側が担当します。サーバーは引用付きの検索コンテキストを返すため、生成モデルの API キーをデータベース内に置く必要はありません。
+
+**LLM wiki (`WIKI.*`)** — エージェントが維持する永続的な相互リンク付き markdown レイヤー。面倒な事務処理はサーバーが担当します: `[[page]]` リンクは検索可能なリンクグラフになり、`WIKI.INDEX` はカタログを生成し、`WIKI.LOG` は grep 可能な履歴となり、`WIKI.LINT` は孤立ページ・壊れたリンク・要約の欠落を検出します。`WIKI.INGEST` は生ソースを記録し、影響を受けるページの一覧を返します。
+
+**エージェントメモリとキャッシュ (`MEMORY.*`, `LLMCACHE.*`)** — `MEMORY.GET` で直近の会話を、`MEMORY.SEARCH` で意味的に関連する過去のやり取りを取り出せます。セマンティックキャッシュにより、言い換えたプロンプトが既に生成済みの回答にヒットします。
+
+**埋め込みバックエンド (`[ai]`)** — 既定では依存関係ゼロのローカル埋め込み器（オフライン、API キー不要、字句ベース）。OpenAI 互換の HTTP エンドポイント（OpenAI、Ollama、vLLM、LM Studio）を設定すれば真のセマンティック検索が得られます。インデックスはベクトル次元を記録し、次元が一致しない場合はもっともらしい誤答を返す代わりにエラーにします。
+
+**Go 1.27** — `go.mod`、CI ワークフロー、Dockerfile を Go 1.27 に更新し、`interface{}` を全面的に `any` へ置き換えました。
+
+詳細は [docs/CHANGELOGS.md](CHANGELOGS.md)、使い方は[利用ドキュメント](githubio/index.md)をご覧ください。
 
 詳細は[開発者のブログ](https://www.cnblogs.com/Finley/category/1598973.html)をご覧ください (中国語)。
 

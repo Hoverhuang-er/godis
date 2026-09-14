@@ -10,10 +10,10 @@ import (
 	"github.com/Hoverhuang-er/godis/internal/lib/sync/atomic"
 	"github.com/Hoverhuang-er/godis/internal/lib/sync/wait"
 	"io"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
-	"log/slog"
 )
 
 // EchoHandler echos received line to client, using for test
@@ -79,7 +79,7 @@ func (h *EchoHandler) Handle(ctx context.Context, conn net.Conn) {
 func (h *EchoHandler) Close() error {
 	slog.Info("handler shutting down...")
 	h.closing.Set(true)
-	h.activeConn.Range(func(key interface{}, val interface{}) bool {
+	h.activeConn.Range(func(key any, val any) bool {
 		client := key.(*EchoClient)
 		_ = client.Close()
 		return true

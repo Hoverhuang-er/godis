@@ -7,11 +7,23 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Hoverhuang-er/godis/internal/datastruct/search"
 	"github.com/Hoverhuang-er/godis/internal/interface/database"
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
 	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
 )
+
+// reindexJSON refreshes every JSON search index claiming the key, so writes
+// through JSON.SET/DEL/ARR*/NUM*/STR*/TOGGLE/CLEAR are searchable immediately.
+func reindexJSON(db *DB, key string) {
+	entity, exists := db.GetEntity(key)
+	if !exists || entity.Data == nil {
+		search.RemoveDocByPrefix(key)
+		return
+	}
+	search.IndexJSONByPrefix(key, entity.Data)
+}
 
 // jsonPathSplit splits a RedisJSON path into segments.
 // Supports: $, ., .key, [N], .key.subkey[0].name
@@ -62,7 +74,7 @@ func jsonPathSplit(path string) []string {
 }
 
 // jsonGetValue resolves a path against a json value.
-func jsonGetValue(val interface{}, segs []string) (interface{}, error) {
+func jsonGetValue(val any, segs []string) (any, error) {
 	if len(segs) == 0 {
 		return val, nil
 	}
@@ -79,7 +91,7 @@ func jsonGetValue(val interface{}, segs []string) (interface{}, error) {
 			if err != nil {
 				return nil, fmt.Errorf("ERR invalid array index: %s", seg)
 			}
-			arr, ok := current.([]interface{})
+			arr, ok := current.([]any)
 			if !ok {
 				return nil, fmt.Errorf("ERR not an array")
 			}
@@ -89,7 +101,7 @@ func jsonGetValue(val interface{}, segs []string) (interface{}, error) {
 			current = arr[idx]
 		} else {
 			// Object key access
-			obj, ok := current.(map[string]interface{})
+			obj, ok := current.(map[string]any)
 			if !ok {
 				return nil, nil
 			}
@@ -103,13 +115,13 @@ func jsonGetValue(val interface{}, segs []string) (interface{}, error) {
 }
 
 // jsonSetValue sets a value at the given path, creating intermediate objects/arrays as needed.
-func jsonSetValue(root interface{}, segs []string, newVal interface{}) (interface{}, error) {
+func jsonSetValue(root any, segs []string, newVal any) (any, error) {
 	if len(segs) == 0 {
 		return newVal, nil
 	}
 
 	if root == nil {
-		root = make(map[string]interface{})
+		root = make(map[string]any)
 	}
 
 	current := root
@@ -121,7 +133,7 @@ func jsonSetValue(root interface{}, segs []string, newVal interface{}) (interfac
 			if err != nil {
 				return nil, fmt.Errorf("ERR invalid array index: %s", seg)
 			}
-			arr, ok := current.([]interface{})
+			arr, ok := current.([]any)
 			if !ok {
 				return nil, fmt.Errorf("ERR path does not point to an array")
 			}
@@ -133,9 +145,9 @@ func jsonSetValue(root interface{}, segs []string, newVal interface{}) (interfac
 			} else {
 				if arr[idx] == nil {
 					if strings.HasPrefix(segs[i+1], "[") {
-						arr[idx] = make([]interface{}, 0)
+						arr[idx] = make([]any, 0)
 					} else {
-						arr[idx] = make(map[string]interface{})
+						arr[idx] = make(map[string]any)
 					}
 				}
 				sub, err := jsonSetValue(arr[idx], segs[i+1:], newVal)
@@ -146,7 +158,7 @@ func jsonSetValue(root interface{}, segs []string, newVal interface{}) (interfac
 			}
 			return root, nil
 		} else {
-			obj, ok := current.(map[string]interface{})
+			obj, ok := current.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("ERR path does not point to an object")
 			}
@@ -160,9 +172,9 @@ func jsonSetValue(root interface{}, segs []string, newVal interface{}) (interfac
 				existing, exists := obj[seg]
 				if !exists || existing == nil {
 					if strings.HasPrefix(segs[i+1], "[") {
-						obj[seg] = make([]interface{}, 0)
+						obj[seg] = make([]any, 0)
 					} else {
-						obj[seg] = make(map[string]interface{})
+						obj[seg] = make(map[string]any)
 					}
 					existing = obj[seg]
 				}
@@ -179,7 +191,7 @@ func jsonSetValue(root interface{}, segs []string, newVal interface{}) (interfac
 }
 
 // jsonDelValue deletes a value at the given path.
-func jsonDelValue(root interface{}, segs []string) (interface{}, bool, error) {
+func jsonDelValue(root any, segs []string) (any, bool, error) {
 	if len(segs) == 0 {
 		return nil, true, nil
 	}
@@ -197,7 +209,7 @@ func jsonDelValue(root interface{}, segs []string) (interface{}, bool, error) {
 			if err != nil {
 				return nil, false, fmt.Errorf("ERR invalid array index: %s", seg)
 			}
-			arr, ok := current.([]interface{})
+			arr, ok := current.([]any)
 			if !ok {
 				return root, false, nil
 			}
@@ -217,7 +229,7 @@ func jsonDelValue(root interface{}, segs []string) (interface{}, bool, error) {
 			}
 			return root, deleted, nil
 		} else {
-			obj, ok := current.(map[string]interface{})
+			obj, ok := current.(map[string]any)
 			if !ok {
 				return root, false, nil
 			}
@@ -246,7 +258,7 @@ func jsonDelValue(root interface{}, segs []string) (interface{}, bool, error) {
 }
 
 // jsonType returns the RedisJSON type string for a Go value.
-func jsonType(val interface{}) string {
+func jsonType(val any) string {
 	if val == nil {
 		return "null"
 	}
@@ -257,9 +269,9 @@ func jsonType(val interface{}) string {
 		return "number"
 	case string:
 		return "string"
-	case []interface{}:
+	case []any:
 		return "array"
-	case map[string]interface{}:
+	case map[string]any:
 		return "object"
 	default:
 		return "unknown"
@@ -267,7 +279,7 @@ func jsonType(val interface{}) string {
 }
 
 // jsonMarshal marshals a Go value to JSON bytes.
-func jsonMarshal(val interface{}) ([]byte, error) {
+func jsonMarshal(val any) ([]byte, error) {
 	if val == nil {
 		return []byte("null"), nil
 	}
@@ -312,7 +324,7 @@ func execJSONSet(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply("ERR wrong number of arguments for 'JSON.SET' command")
 	}
 
-	var parsed interface{}
+	var parsed any
 	if err := json.Unmarshal(args[jsonIdx], &parsed); err != nil {
 		return protocol.MakeErrReply("ERR invalid JSON: " + err.Error())
 	}
@@ -328,7 +340,7 @@ func execJSONSet(db *DB, args [][]byte) redis.Reply {
 		return &protocol.NullBulkReply{}
 	}
 
-	var root interface{}
+	var root any
 	if exists {
 		if entity.Data != nil {
 			root = entity.Data
@@ -341,6 +353,7 @@ func execJSONSet(db *DB, args [][]byte) redis.Reply {
 	}
 
 	db.PutEntity(key, &database.DataEntity{Data: newRoot})
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.set", args...))
 	return protocol.MakeOkReply()
 }
@@ -371,7 +384,7 @@ func execJSONGet(db *DB, args [][]byte) redis.Reply {
 
 	// Multiple paths - return a JSON object with path->value mappings
 	if len(args) > 2 {
-		result := make(map[string]interface{})
+		result := make(map[string]any)
 		for i := 1; i < len(args); i++ {
 			path := string(args[i])
 			segs := jsonPathSplit(path)
@@ -426,6 +439,7 @@ func execJSONDel(db *DB, args [][]byte) redis.Reply {
 	if len(segs) == 0 {
 		// Delete entire key
 		db.Remove(key)
+		reindexJSON(db, key)
 		db.addAof(utils.ToCmdLine3("json.del", args...))
 		return protocol.MakeIntReply(1)
 	}
@@ -436,6 +450,7 @@ func execJSONDel(db *DB, args [][]byte) redis.Reply {
 	}
 	if deleted {
 		db.PutEntity(key, &database.DataEntity{Data: newRoot})
+		reindexJSON(db, key)
 		db.addAof(utils.ToCmdLine3("json.del", args...))
 		return protocol.MakeIntReply(1)
 	}
@@ -540,6 +555,7 @@ func execJSONNumIncrBy(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply(err.Error())
 	}
 	db.PutEntity(key, &database.DataEntity{Data: newRoot})
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.numincrby", args...))
 
 	data, _ := jsonMarshal(num)
@@ -584,6 +600,7 @@ func execJSONNumMultBy(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply(err.Error())
 	}
 	db.PutEntity(key, &database.DataEntity{Data: newRoot})
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.nummultby", args...))
 
 	data, _ := jsonMarshal(num)
@@ -615,7 +632,7 @@ func execJSONObjLen(db *DB, args [][]byte) redis.Reply {
 	if val == nil {
 		return &protocol.NullBulkReply{}
 	}
-	obj, ok := val.(map[string]interface{})
+	obj, ok := val.(map[string]any)
 	if !ok {
 		return protocol.MakeErrReply("ERR path does not point to an object")
 	}
@@ -647,7 +664,7 @@ func execJSONObjKeys(db *DB, args [][]byte) redis.Reply {
 	if val == nil {
 		return &protocol.NullBulkReply{}
 	}
-	obj, ok := val.(map[string]interface{})
+	obj, ok := val.(map[string]any)
 	if !ok {
 		return protocol.MakeErrReply("ERR path does not point to an object")
 	}
@@ -686,13 +703,13 @@ func execJSONArrAppend(db *DB, args [][]byte) redis.Reply {
 	if val == nil {
 		return &protocol.NullBulkReply{}
 	}
-	arr, ok := val.([]interface{})
+	arr, ok := val.([]any)
 	if !ok {
 		return protocol.MakeErrReply("ERR path does not point to an array")
 	}
 
 	for i := valStart; i < len(args); i++ {
-		var parsed interface{}
+		var parsed any
 		if err := json.Unmarshal(args[i], &parsed); err != nil {
 			return protocol.MakeErrReply("ERR invalid JSON: " + err.Error())
 		}
@@ -704,6 +721,7 @@ func execJSONArrAppend(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply(err.Error())
 	}
 	db.PutEntity(key, &database.DataEntity{Data: newRoot})
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.arrappend", args...))
 	return protocol.MakeIntReply(int64(len(arr)))
 }
@@ -743,7 +761,7 @@ func execJSONArrPop(db *DB, args [][]byte) redis.Reply {
 	if val == nil {
 		return &protocol.NullBulkReply{}
 	}
-	arr, ok := val.([]interface{})
+	arr, ok := val.([]any)
 	if !ok {
 		return protocol.MakeErrReply("ERR path does not point to an array")
 	}
@@ -766,6 +784,7 @@ func execJSONArrPop(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply(err.Error())
 	}
 	db.PutEntity(key, &database.DataEntity{Data: newRoot})
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.arrpop", args...))
 
 	data, err := jsonMarshal(popped)
@@ -808,7 +827,7 @@ func execJSONArrTrim(db *DB, args [][]byte) redis.Reply {
 	if val == nil {
 		return &protocol.NullBulkReply{}
 	}
-	arr, ok := val.([]interface{})
+	arr, ok := val.([]any)
 	if !ok {
 		return protocol.MakeErrReply("ERR path does not point to an array")
 	}
@@ -837,6 +856,7 @@ func execJSONArrTrim(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply(err.Error())
 	}
 	db.PutEntity(key, &database.DataEntity{Data: newRoot})
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.arrtrim", args...))
 	return protocol.MakeIntReply(int64(len(arr)))
 }
@@ -868,7 +888,7 @@ func execJSONArrInsert(db *DB, args [][]byte) redis.Reply {
 	if val == nil {
 		return &protocol.NullBulkReply{}
 	}
-	arr, ok := val.([]interface{})
+	arr, ok := val.([]any)
 	if !ok {
 		return protocol.MakeErrReply("ERR path does not point to an array")
 	}
@@ -876,9 +896,9 @@ func execJSONArrInsert(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply("ERR array index out of bounds")
 	}
 
-	var items []interface{}
+	var items []any
 	for i := 3; i < len(args); i++ {
-		var parsed interface{}
+		var parsed any
 		if err := json.Unmarshal(args[i], &parsed); err != nil {
 			return protocol.MakeErrReply("ERR invalid JSON: " + err.Error())
 		}
@@ -892,6 +912,7 @@ func execJSONArrInsert(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply(err.Error())
 	}
 	db.PutEntity(key, &database.DataEntity{Data: newRoot})
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.arrinsert", args...))
 	return protocol.MakeIntReply(int64(len(arr)))
 }
@@ -923,20 +944,21 @@ func execJSONClear(db *DB, args [][]byte) redis.Reply {
 	}
 
 	switch v := val.(type) {
-	case []interface{}:
+	case []any:
 		v = v[:0]
 		newRoot, err := jsonSetValue(entity.Data, segs, v)
 		if err != nil {
 			return protocol.MakeErrReply(err.Error())
 		}
 		db.PutEntity(key, &database.DataEntity{Data: newRoot})
-	case map[string]interface{}:
+	case map[string]any:
 		for k := range v {
 			delete(v, k)
 		}
 	default:
 		return protocol.MakeErrReply("ERR path does not point to an array or object")
 	}
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.clear", args...))
 	return protocol.MakeIntReply(1)
 }
@@ -974,6 +996,7 @@ func execJSONToggle(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply(err.Error())
 	}
 	db.PutEntity(key, &database.DataEntity{Data: newRoot})
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.toggle", args...))
 
 	if newVal {
@@ -1028,6 +1051,7 @@ func execJSONStrAppend(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply(err.Error())
 	}
 	db.PutEntity(key, &database.DataEntity{Data: newRoot})
+	reindexJSON(db, key)
 	db.addAof(utils.ToCmdLine3("json.strappend", args...))
 	return protocol.MakeIntReply(int64(len(s)))
 }

@@ -16,7 +16,7 @@ import (
 var TrimThreshold = 1000
 
 // FlameGraph draws flamegraph in web page to analysis memory usage pattern
-func FlameGraph(rdbFilename string, port int, separators []string, options ...interface{}) (chan<- struct{}, error) {
+func FlameGraph(rdbFilename string, port int, separators []string, options ...any) (chan<- struct{}, error) {
 	if rdbFilename == "" {
 		return nil, errors.New("src file path is required")
 	}

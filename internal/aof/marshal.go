@@ -52,7 +52,7 @@ func listToCmd(key string, list List.List) *protocol.MultiBulkReply {
 	args := make([][]byte, 2+list.Len())
 	args[0] = rPushAllCmd
 	args[1] = []byte(key)
-	list.ForEach(func(i int, val interface{}) bool {
+	list.ForEach(func(i int, val any) bool {
 		bytes, _ := val.([]byte)
 		args[2+i] = bytes
 		return true
@@ -82,7 +82,7 @@ func hashToCmd(key string, hash dict.Dict) *protocol.MultiBulkReply {
 	args[0] = hMSetCmd
 	args[1] = []byte(key)
 	i := 0
-	hash.ForEach(func(field string, val interface{}) bool {
+	hash.ForEach(func(field string, val any) bool {
 		bytes, _ := val.([]byte)
 		args[2+i*2] = []byte(field)
 		args[3+i*2] = bytes

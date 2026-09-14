@@ -9,14 +9,22 @@
 
 [English](https://github.com/Hoverhuang-er/godis/blob/master/docs/README.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_JA.md) | [Suomi](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_FI.md)
 
+📖 **[使用文档](https://hoverhuang-er.github.io/godis/)**
+
+
 Godis 是一个用 Go 语言实现的 Redis 服务器。本项目旨在为尝试使用 Go 语言开发高并发中间件的朋友提供一些参考。
 
 关键功能:
 - Redis 8.8.0 命令兼容
 - 支持 string, list, hash, set, sorted set, bitmap 数据结构
-- RediSearch 搜索 (FT.CREATE, FT.SEARCH, FT.DROPINDEX 等)
+- RediSearch 搜索 (FT.CREATE, FT.SEARCH, FT.HYBRID, FT.DROPINDEX 等)
 - Time Series 时序数据 (TS.CREATE, TS.ADD, TS.GET, TS.RANGE 等)
-- Redis-Vector 向量搜索 (VECTOR 字段类型, KNN 搜索)
+- Redis-Vector 向量搜索 (VECTOR 字段类型, KNN 与混合搜索, JSON 索引)
+- 服务端知识库，无需任何客户端库，`redis-cli` 直接可查:
+  - RAG (RAG.INGEST / RAG.QUERY —— 切块、嵌入、检索、给出引用)
+  - LLM wiki (WIKI.* —— 互链页面、链接图、自动生成 index/log、体检)
+  - Agent 记忆 (MEMORY.ADD / MEMORY.GET / MEMORY.SEARCH)
+  - 语义答案缓存 (LLMCACHE.GET / LLMCACHE.SET)
 - 并行内核，提供更优秀的性能
 - 自动过期功能(TTL)
 - 发布订阅
@@ -27,6 +35,46 @@ Godis 是一个用 Go 语言实现的 Redis 服务器。本项目旨在为尝试
 - 内置集群模式. 集群对客户端是透明的, 您可以像使用单机版 redis 一样使用 godis 集群
   - 使用 Raft 算法维护集群元数据。支持动态扩缩容、自动平衡和主从切换。
   - `MSET`, `MSETNX`, `DEL`, `Rename`, `RenameNX`  命令在集群模式下原子性执行, 允许 key 在集群的不同节点上
+
+## v1.3.5 新增能力
+
+全文检索、向量检索与混合检索，以及由服务端直接提供的知识库。
+
+**检索 (`FT.*`)**
+
+- `FT.CREATE` 除 `ON HASH` 外支持 `ON JSON`，支持 `AS` 别名与 JSON 路径字段（如 `$.features[*]`）。
+- 正确解析 dialect-2 查询语法：预过滤、`@tag:{a|b}`、`@num:[min max]`、取反、并集、`SORTBY`、`RETURN` 投影、`LIMIT`、`FILTER`、`WITHSCORES`。
+- 查询向量既接受 Redis 客户端实际发送的原始小端 `FLOAT32` 字节，也接受文本形式。
+- 新增 `FT.HYBRID`：`SEARCH` 子句与 `VSIM` 子句，默认用 RRF（倒数排名融合）合并，也可 `COMBINE LINEAR`。
+- `FT.CREATE` 会回填库中已有数据，因此先写数据后建索引也立刻可查。
+
+**RAG (`RAG.*`)** —— 切块、嵌入、检索都在服务端完成，因此只用 `redis-cli` 即可查询知识库：
+
+```
+redis> RAG.INGEST kb doc-1 "HNSW 构建分层近邻图；召回率与构建时间相互权衡。" TITLE "HNSW" SOURCE handbook.md TAG vectors
+1
+redis> RAG.QUERY kb "召回率和构建时间如何权衡？" K 3
+# Retrieved context
+
+Query: 召回率和构建时间如何权衡？
+
+### [1] HNSW
+_source: handbook.md · similarity: 0.624 · kb:doc-1 · chunk 0_
+
+HNSW 构建分层近邻图；召回率与构建时间相互权衡。
+```
+
+答案生成仍由调用方负责。服务端返回带引用的检索上下文，因此数据库里无需保存生成模型的 API key。
+
+**LLM wiki (`WIKI.*`)** —— 由 agent 维护的持久化互链 markdown 层，服务端负责其中的记账工作：`[[page]]` 链接自动成为可查询的链接图，`WIKI.INDEX` 生成目录，`WIKI.LOG` 是可 grep 的历史，`WIKI.LINT` 找出孤儿页、坏链与缺失摘要，`WIKI.INGEST` 归档原始来源并列出租受影响页面。
+
+**Agent 记忆与缓存 (`MEMORY.*`, `LLMCACHE.*`)** —— `MEMORY.GET` 取最近窗口，`MEMORY.SEARCH` 按语义找回更早的相关轮次；语义缓存让改写过的提问直接命中已生成的答案。
+
+**嵌入后端 (`[ai]`)** —— 默认零依赖的本地嵌入器（离线、无需 API key、词法匹配），也可配置任意 OpenAI 兼容 HTTP 端点（OpenAI、Ollama、vLLM、LM Studio）获得真正语义。索引记录向量维度，维度不一致时直接报错，而不是返回看似合理的错误结果。
+
+**Go 1.27** —— `go.mod`、CI 工作流与 Dockerfile 均升级到 Go 1.27，并全量将 `interface{}` 替换为 `any`。
+
+完整列表见 [docs/CHANGELOGS.md](CHANGELOGS.md)，使用指南见[使用文档](githubio/index.md)。
 
 可以在[我的博客](https://www.cnblogs.com/Finley/category/1598973.html)了解更多关于
 Godis 的信息。

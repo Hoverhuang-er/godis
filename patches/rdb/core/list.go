@@ -92,7 +92,7 @@ func (dec *Decoder) readQuickList2() ([][]byte, *model.Quicklist2Detail, error) 
 	return entries, detail, nil
 }
 
-func (enc *Encoder) WriteListObject(key string, values [][]byte, options ...interface{}) error {
+func (enc *Encoder) WriteListObject(key string, values [][]byte, options ...any) error {
 	err := enc.beforeWriteObject(options...)
 	if err != nil {
 		return err
@@ -111,7 +111,7 @@ func (enc *Encoder) WriteListObject(key string, values [][]byte, options ...inte
 	return nil
 }
 
-func (enc *Encoder) tryWriteListZipList(key string, values [][]byte, options ...interface{}) (bool, error) {
+func (enc *Encoder) tryWriteListZipList(key string, values [][]byte, options ...any) (bool, error) {
 	if len(values) > enc.listZipListOpt.getMaxEntries() {
 		return false, nil
 	}
@@ -138,7 +138,7 @@ func (enc *Encoder) tryWriteListZipList(key string, values [][]byte, options ...
 	return true, nil
 }
 
-func (enc *Encoder) writeQuickList(key string, values [][]byte, options ...interface{}) error {
+func (enc *Encoder) writeQuickList(key string, values [][]byte, options ...any) error {
 	var pages [][]string
 	pageSize := 0
 	var curPage []string

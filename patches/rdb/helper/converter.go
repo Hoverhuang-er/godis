@@ -9,7 +9,7 @@ import (
 )
 
 // ToAOF read rdb file and convert to aof file (Redis Serialization )
-func ToAOF(rdbFilename string, aofFilename string, options ...interface{}) error {
+func ToAOF(rdbFilename string, aofFilename string, options ...any) error {
 	if rdbFilename == "" {
 		return errors.New("src file path is required")
 	}

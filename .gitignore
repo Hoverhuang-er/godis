@@ -34,3 +34,8 @@ logs
 
 # Deepwork state
 .slim/deepwork/
+
+# Runtime state written by a local godis (default dir = ".")
+/standalone.toml
+/cluster.toml
+/repl/

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Hoverhuang-er/godis/internal/datastruct/dict"
+	"github.com/Hoverhuang-er/godis/internal/datastruct/search"
 	"github.com/Hoverhuang-er/godis/internal/interface/database"
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/timewheel"
@@ -32,8 +33,8 @@ type DB struct {
 	addAof func(CmdLine)
 
 	// callbacks
-	insertCallback       database.KeyEventCallback
-	deleteCallback       database.KeyEventCallback
+	insertCallback    database.KeyEventCallback
+	deleteCallback    database.KeyEventCallback
 	hashFieldCallback database.HashFieldChangeCallback
 }
 
@@ -202,12 +203,17 @@ func (db *DB) PutIfAbsent(key string, entity *database.DataEntity) int {
 	return ret
 }
 
-// Remove the given key from db
+// Remove the given key from db.
+//
+// Removing a key also drops it from every search index. Doing it here rather
+// than at each call site means TTL expiry, RENAME and FLUSH clean up too, so a
+// query can never return a document the database no longer holds.
 func (db *DB) Remove(key string) {
 	raw, deleted := db.data.RemoveWithLock(key)
 	db.ttlMap.Remove(key)
 	taskKey := genExpireTask(key)
 	timewheel.Cancel(taskKey)
+	search.RemoveDocByPrefix(key)
 	if cb := db.deleteCallback; cb != nil {
 		var entity *database.DataEntity
 		if deleted > 0 {
@@ -236,6 +242,7 @@ func (db *DB) Removes(keys ...string) (deleted int) {
 func (db *DB) Flush() {
 	db.data.Clear()
 	db.ttlMap.Clear()
+	search.ResetAll()
 }
 
 /* ---- Lock Function ----- */
@@ -319,7 +326,7 @@ func (db *DB) GetVersion(key string) uint32 {
 
 // ForEach traverses all the keys in the database
 func (db *DB) ForEach(cb func(key string, data *database.DataEntity, expiration *time.Time) bool) {
-	db.data.ForEach(func(key string, raw interface{}) bool {
+	db.data.ForEach(func(key string, raw any) bool {
 		entity, _ := raw.(*database.DataEntity)
 		var expiration *time.Time
 		rawExpireTime, ok := db.ttlMap.Get(key)

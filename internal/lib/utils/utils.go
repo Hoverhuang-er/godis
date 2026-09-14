@@ -30,7 +30,7 @@ func ToCmdLine3(commandName string, args ...[]byte) [][]byte {
 }
 
 // Equals check whether the given value is equal
-func Equals(a interface{}, b interface{}) bool {
+func Equals(a any, b any) bool {
 	sliceA, okA := a.([]byte)
 	sliceB, okB := b.([]byte)
 	if okA && okB {

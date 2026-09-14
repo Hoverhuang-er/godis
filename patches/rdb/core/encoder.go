@@ -277,7 +277,7 @@ func WithTTL(expirationMs uint64) TTLOption {
 	return TTLOption(expirationMs)
 }
 
-func (enc *Encoder) beforeWriteObject(options ...interface{}) error {
+func (enc *Encoder) beforeWriteObject(options ...any) error {
 	if !enc.validateStateChange(writtenObjectState) {
 		return fmt.Errorf("cannot write object at state: %s", enc.state)
 	}

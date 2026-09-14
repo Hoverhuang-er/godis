@@ -1,9 +1,9 @@
 package database
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"encoding/binary"
 	"path/filepath"
 
 	"github.com/boltdb/bolt"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/Hoverhuang-er/godis/internal/aof"
 	"github.com/Hoverhuang-er/godis/internal/config"
+	"github.com/Hoverhuang-er/godis/internal/datastruct/search"
 	"github.com/Hoverhuang-er/godis/internal/interface/database"
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
 	"github.com/Hoverhuang-er/godis/internal/lib/utils"
@@ -25,7 +26,7 @@ import (
 	"log/slog"
 )
 
-var godisVersion = "1.3.4" // do not modify
+var godisVersion = "1.3.5" // do not modify
 
 // Version returns the godis server version (e.g. "1.3.4").
 // It is used to enforce the cluster max major-version gap policy.
@@ -40,8 +41,8 @@ var connIDCounter int64
 type Server struct {
 	dbSet []*atomic.Value // *DB
 
-	hub        *pubsub.Hub
-	persister  *aof.Persister
+	hub       *pubsub.Hub
+	persister *aof.Persister
 
 	role         int32
 	slaveStatus  *slaveStatus
@@ -51,7 +52,7 @@ type Server struct {
 	deleteCallback database.KeyEventCallback
 
 	// Bolt-backed persistent store, auto-saved on graceful shutdown
-	boltDB *bolt.DB
+	boltDB     *bolt.DB
 	slogLogger *SlowLogger
 
 	// Prometheus metrics
@@ -152,7 +153,6 @@ func (server *Server) Exec(c redis.Connection, cmdLine [][]byte) (result redis.R
 			server.metrics.RecordCommandDuration(strings.ToLower(string(cmdLine[0])), time.Since(GodisExecCommandStartUnixTime))
 		}()
 	}
-
 
 	cmdName := strings.ToLower(string(cmdLine[0]))
 	// ping
@@ -298,7 +298,6 @@ func (server *Server) GetMetrics() *monitoring.Metrics {
 	return server.metrics
 }
 
-
 // Close graceful shutdown database
 func (server *Server) Close() {
 	// Flush all data to bolt before shutdown
@@ -398,7 +397,7 @@ func (server *Server) saveToBolt() {
 }
 
 // DataToBytes converts a database value to raw bytes for persistence.
-func DataToBytes(data interface{}) []byte {
+func DataToBytes(data any) []byte {
 	switch v := data.(type) {
 	case []byte:
 		return v
@@ -499,7 +498,7 @@ func (server *Server) flushDB(dbIndex int) redis.Reply {
 	oldDB := server.mustSelectDB(dbIndex)
 	newDB := makeDB()
 	// conf namespace is config, not data: it survives FLUSHDB/FLUSHALL
-	oldDB.data.ForEach(func(key string, val interface{}) bool {
+	oldDB.data.ForEach(func(key string, val any) bool {
 		if IsConfKey(key) {
 			newDB.PutEntity(key, val.(*database.DataEntity))
 			if raw, ok := oldDB.ttlMap.Get(key); ok {
@@ -509,6 +508,7 @@ func (server *Server) flushDB(dbIndex int) redis.Reply {
 		return true
 	})
 	server.loadDB(dbIndex, newDB)
+	search.ResetAll()
 	return &protocol.OkReply{}
 }
 
@@ -669,7 +669,7 @@ func (server *Server) GetDBSize(dbIndex int) (int, int) {
 func (server *Server) GetUserDBSize(dbIndex int) (int, int) {
 	db := server.mustSelectDB(dbIndex)
 	keys := 0
-	db.data.ForEach(func(key string, val interface{}) bool {
+	db.data.ForEach(func(key string, val any) bool {
 		if !IsConfKey(key) {
 			keys++
 		}

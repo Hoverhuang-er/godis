@@ -23,7 +23,7 @@ type prefixStats struct {
 // SepPrefixAnalyse reads an RDB file and aggregates memory usage by key prefix
 // using a flat map (constant memory). Keys are split by the given separators up to maxDepth.
 // Multiple separators are normalized to the first one before splitting.
-func SepPrefixAnalyse(rdbFilename string, topN int, maxDepth int, separators []string, output *os.File, options ...interface{}) error {
+func SepPrefixAnalyse(rdbFilename string, topN int, maxDepth int, separators []string, output *os.File, options ...any) error {
 	if rdbFilename == "" {
 		return errors.New("src file path is required")
 	}

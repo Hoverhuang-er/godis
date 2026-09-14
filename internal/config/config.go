@@ -115,6 +115,19 @@ type ServerProperties struct {
 	// Web Dashboard settings
 	WebPort int `cfg:"web-port" toml:"web_port"`
 	// Sentinel settings
+	// AI / knowledge-base settings. The embedder runs inside the server so that
+	// RAG.QUERY and friends can be issued from redis-cli without the client
+	// embedding anything.
+	AIEmbedProvider string `cfg:"ai-embed-provider" toml:"ai_embed_provider"`
+	AIEmbedLocalDim int    `cfg:"ai-embed-local-dim" toml:"ai_embed_local_dim"`
+	AIEmbedBaseURL  string `cfg:"ai-embed-base-url" toml:"ai_embed_base_url"`
+	AIEmbedAPIKey   string `cfg:"ai-embed-api-key" toml:"ai_embed_api_key"`
+	AIEmbedModel    string `cfg:"ai-embed-model" toml:"ai_embed_model"`
+	AIEmbedDim      int    `cfg:"ai-embed-dim" toml:"ai_embed_dim"`
+	AIEmbedTimeout  int    `cfg:"ai-embed-timeout" toml:"ai_embed_timeout"`
+	AIChunkSize     int    `cfg:"ai-chunk-size" toml:"ai_chunk_size"`
+	AIChunkOverlap  int    `cfg:"ai-chunk-overlap" toml:"ai_chunk_overlap"`
+
 	SentinelEnabled  bool                    `cfg:"sentinel-enabled" toml:"sentinel_enabled"`
 	SentinelPort     int                     `cfg:"sentinel-port" toml:"sentinel_port"`
 	SentinelMonitors []SentinelMonitorConfig `cfg:"sentinel-monitors" toml:"sentinel_monitors"`
@@ -203,6 +216,11 @@ func init() {
 		HttpApiHost:                "127.0.0.1",
 		HttpApiPort:                63790,
 		WebPort:                    63800,
+		AIEmbedProvider:            "",
+		AIEmbedLocalDim:            512,
+		AIEmbedTimeout:             30,
+		AIChunkSize:                800,
+		AIChunkOverlap:             120,
 		SentinelPort:               26379,
 	}
 	EachTimeServerInfo = &ServerInfo{}
@@ -317,6 +335,16 @@ func populateFromViper(v *viper.Viper) {
 		}
 	}
 	_ = os.MkdirAll(Properties.DataDir, 0o755)
+	Properties.AIEmbedProvider = getStr(v, "ai.embed_provider", Properties.AIEmbedProvider)
+	Properties.AIEmbedLocalDim = getInt(v, "ai.embed_local_dim", Properties.AIEmbedLocalDim)
+	Properties.AIEmbedBaseURL = getStr(v, "ai.embed_base_url", Properties.AIEmbedBaseURL)
+	Properties.AIEmbedAPIKey = getStr(v, "ai.embed_api_key", Properties.AIEmbedAPIKey)
+	Properties.AIEmbedModel = getStr(v, "ai.embed_model", Properties.AIEmbedModel)
+	Properties.AIEmbedDim = getInt(v, "ai.embed_dim", Properties.AIEmbedDim)
+	Properties.AIEmbedTimeout = getInt(v, "ai.embed_timeout", Properties.AIEmbedTimeout)
+	Properties.AIChunkSize = getInt(v, "ai.chunk_size", Properties.AIChunkSize)
+	Properties.AIChunkOverlap = getInt(v, "ai.chunk_overlap", Properties.AIChunkOverlap)
+
 	Properties.SentinelEnabled = getBool(v, "sentinel.enable", Properties.SentinelEnabled)
 	Properties.SentinelPort = getInt(v, "sentinel.port", Properties.SentinelPort)
 	var monitors []SentinelMonitorConfig
@@ -378,7 +406,7 @@ func SetupConfigFromNacos(addr, namespaceId, group, dataId string) {
 		{IpAddr: addr, Port: 8848},
 	}
 
-	configClient, err := clients.CreateConfigClient(map[string]interface{}{
+	configClient, err := clients.CreateConfigClient(map[string]any{
 		"serverConfigs": serverConfigs,
 		"clientConfig":  clientConfig,
 	})
@@ -427,7 +455,7 @@ func loadNacosDynamicConfig(client config_client.IConfigClient, dataId, group st
 }
 
 func parseTomlContent(content string) {
-	flatMap := make(map[string]interface{})
+	flatMap := make(map[string]any)
 	err := toml.Unmarshal([]byte(content), &flatMap)
 	if err != nil {
 		slog.Error("failed to parse toml content", "error", err)
@@ -436,7 +464,7 @@ func parseTomlContent(content string) {
 	applyTomlFlat(flatMap)
 }
 
-func applyTomlFlat(flatMap map[string]interface{}) {
+func applyTomlFlat(flatMap map[string]any) {
 	v := viper.New()
 	for k, val := range flatMap {
 		v.Set(k, val)
@@ -548,7 +576,7 @@ var nodeLocalParams = map[string]bool{
 	"oss-access-key-id": true, "oss-secret-access-key": true, "oss-region": true,
 	"oss-prefix": true, "oss-use-ssl": true, "oss-force-path-style": true,
 	"http-api-enabled": true, "http-api-port": true, "http-api-host": true,
-	"web-port": true,
+	"web-port":         true,
 	"sentinel-enabled": true, "sentinel-port": true, "sentinel-monitors": true,
 }
 
@@ -580,7 +608,7 @@ var paramSection = map[string]string{
 	"oss-access-key-id": "oss", "oss-secret-access-key": "oss", "oss-region": "oss",
 	"oss-prefix": "oss", "oss-use-ssl": "oss", "oss-force-path-style": "oss",
 	"http-api-enabled": "http_api", "http-api-port": "http_api", "http-api-host": "http_api",
-	"web-port": "web",
+	"web-port":         "web",
 	"sentinel-enabled": "sentinel", "sentinel-port": "sentinel",
 }
 

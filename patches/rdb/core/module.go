@@ -76,9 +76,9 @@ func (m moduleTypeHandlerImpl) ReadLength() (uint64, bool, error) {
 	return m.dec.readLength()
 }
 
-type ModuleTypeHandleFunc func(handler ModuleTypeHandler, encVersion int) (interface{}, error)
+type ModuleTypeHandleFunc func(handler ModuleTypeHandler, encVersion int) (any, error)
 
-func (dec *Decoder) readModuleType() (string, interface{}, error) {
+func (dec *Decoder) readModuleType() (string, any, error) {
 	moduleId, _, err := dec.readLength()
 	if err != nil {
 		return "", nil, err
@@ -86,7 +86,7 @@ func (dec *Decoder) readModuleType() (string, interface{}, error) {
 	return dec.handleModuleType(moduleId)
 }
 
-func (dec *Decoder) handleModuleType(moduleId uint64) (string, interface{}, error) {
+func (dec *Decoder) handleModuleType(moduleId uint64) (string, any, error) {
 	moduleType := moduleTypeNameByID(moduleId)
 	handler, found := dec.withSpecialTypes[moduleType]
 	if !found {
@@ -114,7 +114,7 @@ func moduleTypeEncVersionByID(moduleId uint64) uint64 {
 }
 
 // skipModuleAuxData skips module aux data
-func skipModuleAuxData(h ModuleTypeHandler, _ int) (interface{}, error) {
+func skipModuleAuxData(h ModuleTypeHandler, _ int) (any, error) {
 	opCode, err := h.ReadOpcode()
 	if err != nil {
 		return nil, err

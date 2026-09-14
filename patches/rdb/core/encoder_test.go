@@ -57,7 +57,7 @@ func TestEncode(t *testing.T) {
 	}
 
 	for k, v := range strMap {
-		var opts []interface{}
+		var opts []any
 		if v.TTL > 0 {
 			opts = append(opts, WithTTL(v.TTL))
 		}

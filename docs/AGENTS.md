@@ -48,6 +48,7 @@ internal/           — Private application code
   interface/        — Contract types (redis.Reply, redis.Connection, database.DB, tcp.Handler)
   lib/              — Utility packages (arena, pool, logger, wildcard, timewheel, ...)
   pubsub/           — Channel-based pub/sub hub
+  ai/               — Server-side embedding (local hashing vectorizer, OpenAI-compatible HTTP) and chunking
   redis/            — Protocol layer (parser/, protocol/, connection/, server/, client/)
   tcp/              — Generic TCP server (goroutine-per-connection accept loop)
 config/             — Configuration file templates (standalone.toml, cluster.toml)
@@ -144,13 +145,18 @@ Structured JSON logging via `internal/lib/logger` (wraps `zap.Logger`, bridges `
 | `internal/cluster/cluster.go` | Cluster entry point (alias to `core.Cluster`) |
 | `internal/config/config.go` | `ServerProperties` with reflect-based config parsing |
 | `internal/aof/aof.go` | AOF persistence — background writer, rewrite, RDB preamble |
-| `go.mod` | Module definition (Go 1.26.0) |
+| `internal/datastruct/search/` | Inverted index, dialect-2 query parser, vector KNN, RRF fusion |
+| `internal/database/search.go` | `FT.*` search commands |
+| `internal/database/rag.go`, `wiki.go`, `memory.go`, `llmcache.go` | Knowledge-base commands: RAG, LLM wiki, agent memory, semantic cache |
+| `internal/database/kb.go` | Shared knowledge-base plumbing: document writes, index recovery, locking |
+| `internal/ai/` | Embedding and chunking that run inside the server |
+| `go.mod` | Module definition (Go 1.27.0) |
 
 ---
 
 ## Runtime/Tooling Preferences
 
-- **Runtime**: Go 1.26.0+, no other runtime required
+- **Runtime**: Go 1.27.0+, no other runtime required
 - **Module**: `github.com/Hoverhuang-er/godis`
 - **Package manager**: Go modules (no external tooling)
 - **Key deps**: `github.com/hashicorp/raft` + `raft-boltdb` (cluster), `github.com/hdt3213/rdb` (RDB parser), `github.com/panjf2000/gnet/v2` (event-loop transport)
@@ -162,7 +168,7 @@ Structured JSON logging via `internal/lib/logger` (wraps `zap.Logger`, bridges `
 ## Testing & QA
 
 - **Framework**: Standard `testing` package only — no external test frameworks
-- **Location**: 46 `_test.go` files co-located with source across all packages
+- **Location**: 59 `_test.go` files co-located with source across all packages
 - **Test helpers**: `MakeTestDB()` / `NewStandaloneServer()` create in-memory test fixtures; `Exec()` returns `redis.Reply`; assertions compare `ToBytes()` output or use `internal/redis/protocol/asserts` helpers
 - **Test patterns**:
   - Database tests: execute command via `Exec()`, compare reply `ToBytes()` output

@@ -27,8 +27,8 @@ type PendingEntry struct {
 
 // Consumer represents a consumer within a consumer group that reads from the stream.
 type Consumer struct {
-	Name          string
-	Pending       []*PendingEntry
+	Name    string
+	Pending []*PendingEntry
 }
 
 // ConsumerGroup represents a group of consumers that cooperatively consume a stream.
@@ -44,9 +44,9 @@ type Stream struct {
 	mu      sync.RWMutex
 	entries []*Entry
 	// lastID tracks the last entry ID for auto-generation
-	lastID       string
-	lastTimeMs   int64
-	lastSeq      int64
+	lastID     string
+	lastTimeMs int64
+	lastSeq    int64
 
 	// consumer groups
 	groups map[string]*ConsumerGroup
@@ -528,12 +528,12 @@ func (s *Stream) GroupDelConsumer(groupName, consumerName string) int {
 }
 
 // Info returns stream metadata including length, first/last entry IDs, and group count.
-func (s *Stream) Info() map[string]interface{} {
+func (s *Stream) Info() map[string]any {
 	slog.Debug("Stream.Info")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	info := make(map[string]interface{})
+	info := make(map[string]any)
 	info["length"] = len(s.entries)
 	if len(s.entries) > 0 {
 		info["first-entry"] = s.entries[0].ID
@@ -544,14 +544,14 @@ func (s *Stream) Info() map[string]interface{} {
 }
 
 // GroupInfo returns metadata about all consumer groups in the stream.
-func (s *Stream) GroupInfo() []map[string]interface{} {
+func (s *Stream) GroupInfo() []map[string]any {
 	slog.Debug("Stream.GroupInfo")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]map[string]interface{}, 0)
+	result := make([]map[string]any, 0)
 	for _, group := range s.groups {
-		gInfo := make(map[string]interface{})
+		gInfo := make(map[string]any)
 		gInfo["name"] = group.Name
 		gInfo["consumers"] = len(group.Consumers)
 		gInfo["pending"] = len(group.Pending)
@@ -566,7 +566,7 @@ func (s *Stream) GroupInfo() []map[string]interface{} {
 }
 
 // ConsumerInfo returns metadata about all consumers in a given consumer group.
-func (s *Stream) ConsumerInfo(groupName string) []map[string]interface{} {
+func (s *Stream) ConsumerInfo(groupName string) []map[string]any {
 	slog.Debug("Stream.ConsumerInfo", "groupName", groupName)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -576,9 +576,9 @@ func (s *Stream) ConsumerInfo(groupName string) []map[string]interface{} {
 		return nil
 	}
 
-	result := make([]map[string]interface{}, 0)
+	result := make([]map[string]any, 0)
 	for _, consumer := range group.Consumers {
-		cInfo := make(map[string]interface{})
+		cInfo := make(map[string]any)
 		cInfo["name"] = consumer.Name
 		cInfo["pending"] = len(consumer.Pending)
 		result = append(result, cInfo)

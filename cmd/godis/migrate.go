@@ -494,7 +494,7 @@ func (ui *fullMigrateUI) renderFull() {
 		isCursor := i == ui.cursor
 
 		// Color: migrated keys green, pending white, cursor highlighted
-		srcColor := "\033[38;5;255m"  // white
+		srcColor := "\033[38;5;255m" // white
 		if isDest {
 			srcColor = "\033[38;5;82m" // green
 		}
@@ -614,7 +614,7 @@ func convertToCmdLine(args []string) [][]byte {
 	return cmd
 }
 
-func isErrorReply(reply interface{}) bool {
+func isErrorReply(reply any) bool {
 	if reply == nil {
 		return false
 	}
@@ -628,7 +628,7 @@ func isErrorReply(reply interface{}) bool {
 	return false
 }
 
-func extractError(reply interface{}) string {
+func extractError(reply any) string {
 	if reply == nil {
 		return ""
 	}

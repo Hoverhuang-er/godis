@@ -475,7 +475,7 @@ func TestConcurrentForEach(t *testing.T) {
 		d.Put(key, i)
 	}
 	i := 0
-	d.ForEach(func(key string, value interface{}) bool {
+	d.ForEach(func(key string, value any) bool {
 		intVal, _ := value.(int)
 		expectedKey := "k" + strconv.Itoa(intVal)
 		if key != expectedKey {

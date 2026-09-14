@@ -27,14 +27,14 @@ func getAsBitfield(db *DB, key string) ([]byte, protocol.ErrorReply) {
 
 // bitfieldOp represents a single BITFIELD subcommand.
 type bitfieldOp struct {
-	opType string // GET, SET, INCRBY
+	opType     string // GET, SET, INCRBY
 	offsetType string // BIT or BYTE
-	offset int64
-	encoding string // u8, i16, etc.
-	bits int
-	signed bool
-	value int64 // for SET and INCRBY
-	overflow string // WRAP, SAT, FAIL
+	offset     int64
+	encoding   string // u8, i16, etc.
+	bits       int
+	signed     bool
+	value      int64  // for SET and INCRBY
+	overflow   string // WRAP, SAT, FAIL
 }
 
 func parseEncoding(e string) (bits int, signed bool, errReply protocol.ErrorReply) {
@@ -292,7 +292,7 @@ func applyOverflow(val int64, bits int, signed bool, overflow string) int64 {
 		switch overflow {
 		case "WRAP":
 			val = (val + (1 << uint(bits-1))) & ((1 << uint(bits)) - 1)
-			val -= (1 << uint(bits - 1))
+			val -= (1 << uint(bits-1))
 		case "SAT":
 			maxVal := int64((1 << uint(bits-1)) - 1)
 			minVal := -maxVal - 1

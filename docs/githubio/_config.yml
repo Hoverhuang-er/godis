@@ -1,0 +1,20 @@
+title: godis
+description: A Redis-compatible in-memory database in Go, with vector search, hybrid search and a server-side knowledge base.
+theme: jekyll-theme-primer
+markdown: kramdown
+
+plugins:
+  - jekyll-relative-links
+
+relative_links:
+  enabled: true
+  collections: true
+
+include:
+  - index.md
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

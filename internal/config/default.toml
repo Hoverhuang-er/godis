@@ -92,6 +92,32 @@ port = 63790
 # Web dashboard listen port
 port = 63800
 
+[ai]
+# Embedding backend used by the knowledge-base commands (RAG.*, WIKI.*,
+# MEMORY.*, LLMCACHE.*). It runs inside the server, so redis-cli can issue a
+# knowledge-base query directly.
+#
+#   local = deterministic pure-Go embedder. Offline, no API key, no network.
+#           Lexical (unigrams + character trigrams), not truly semantic.
+#   http  = any OpenAI-compatible /embeddings endpoint (OpenAI, Ollama, vLLM,
+#           LM Studio, hosted gateways). Real semantics; requires the settings
+#           below and network access at query time.
+embed_provider = "local"
+
+# Vector length of the local embedder.
+embed_local_dim = 512
+
+# HTTP provider settings (only used when embed_provider = "http").
+# embed_base_url = "https://api.openai.com/v1"
+# embed_api_key = ""
+# embed_model = "text-embedding-3-small"
+# embed_dim = 1536
+# embed_timeout = 30
+
+# Chunking bounds for RAG.INGEST, in characters.
+chunk_size = 800
+chunk_overlap = 120
+
 [sentinel]
 # Sentinel mode: expose the SENTINEL command surface for failover of
 # externally-monitored masters (e.g. redis-py / lettuce clients).

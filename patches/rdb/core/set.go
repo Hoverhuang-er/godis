@@ -86,7 +86,7 @@ func (dec *Decoder) readListPackSet() ([][]byte, *model.ListpackDetail, error) {
 	return values, detail, nil
 }
 
-func (enc *Encoder) WriteSetObject(key string, values [][]byte, options ...interface{}) error {
+func (enc *Encoder) WriteSetObject(key string, values [][]byte, options ...any) error {
 	err := enc.beforeWriteObject(options...)
 	if err != nil {
 		return err

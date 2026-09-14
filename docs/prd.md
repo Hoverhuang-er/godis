@@ -145,7 +145,11 @@ Godis is a Redis-compatible in-memory data structure server written in Go. It pr
 | **Top-K** | `internal/database/topk.go` | TOPK.ADD, TOPK.QUERY, TOPK.LIST, TOPK.INFO, TOPK.COUNT, TOPK.INCRBY |
 | **TimeSeries** | `internal/database/timeseries.go` | TS.CREATE, TS.ADD, TS.GET, TS.MGET, TS.RANGE, TS.REVRANGE, TS.MRANGE, TS.MREVRANGE, TS.ALTER, TS.DELETERULE, TS.DEL, TS.INFO, TS.INCRBY, TS.DECRBY, TS.QUERYINDEX |
 | **RedisJSON** | `internal/database/json.go` | JSON.SET, JSON.GET, JSON.DEL, JSON.MGET, JSON.ARRAPPEND, JSON.ARRPOP, JSON.ARRTRIM, JSON.ARRINSERT, JSON.ARRLEN, JSON.OBJKEYS, JSON.OBJLEN, JSON.TYPE, JSON.NUMINCRBY, JSON.STRAPPEND, JSON.STRLEN, JSON.TOGGLE, JSON.CLEAR, JSON.DEBUG, JSON.FORGET, JSON.MERGE, JSON.MSET, JSON.RESP, JSON.SET |
-| **RediSearch** | `internal/database/search.go` | FT.CREATE, FT.SEARCH, FT.DROPINDEX, FT.INFO, FT.ADD, FT._LIST, FT.AGGREGATE, FT.ALIASADD, FT.ALIASDEL, FT.ALIASUPDATE, FT.CONFIG, FT.DICTADD, FT.DICTDEL, FT.DICTDUMP, FT.EXPLAIN, FT.EXPLAINCLI, FT.PROFILE, FT.SPELLCHECK, FT.SUGADD, FT.SUGDEL, FT.SUGGET, FT.SUGLEN, FT.SYNADD, FT.SYNDUMP, FT.SYNUPDATE, FT.TAGVALS |
+| **RediSearch** | `internal/database/search.go` | FT.CREATE (HASH or JSON schema, TEXT/TAG/NUMERIC/VECTOR fields), FT.SEARCH (dialect-2 query, KNN with pre-filter), FT.HYBRID (RRF/LINEAR fusion), FT.DROPINDEX, FT.INFO, FT._LIST, FT.AGGREGATE, FT.ALIASADD, FT.ALIASDEL, FT.ALIASUPDATE, FT.CONFIG, FT.DICTADD, FT.DICTDEL, FT.DICTDUMP, FT.EXPLAIN, FT.EXPLAINCLI, FT.PROFILE, FT.SPELLCHECK, FT.SUGADD, FT.SUGDEL, FT.SUGGET, FT.SUGLEN, FT.SYNADD, FT.SYNDUMP, FT.SYNUPDATE, FT.TAGVALS |
+| **RAG** | `internal/database/rag.go` | RAG.INGEST (chunk + embed server-side), RAG.QUERY (retrieve with citations), RAG.DEL, RAG.DOCS, RAG.INFO |
+| **LLM wiki** | `internal/database/wiki.go` | WIKI.SET/GET/DEL/LIST, WIKI.LINKS/BACKLINKS, WIKI.INDEX, WIKI.LOG(.ADD), WIKI.QUERY, WIKI.INGEST, WIKI.SOURCE.*, WIKI.LINT, WIKI.EXPORT |
+| **Agent memory** | `internal/database/memory.go` | MEMORY.ADD/GET/SEARCH/CLEAR/SESSIONS/INFO |
+| **Semantic cache** | `internal/database/llmcache.go` | LLMCACHE.SET/GET/DEL/STATS/CLEAR |
 
 #### 3.1.3 System Commands
 
@@ -237,7 +241,8 @@ Godis is a Redis-compatible in-memory data structure server written in Go. It pr
 | **HyperLogLog** | `internal/datastruct/hyperloglog/` | Standard HLL |
 | **TimeSeries** | `internal/datastruct/timeseries/` | Compressed time-series |
 | **Array** | `internal/datastruct/array/` | Generic array utility |
-| **Search** | `internal/datastruct/search/` | Inverted index + vector index |
+| **Search** | `internal/datastruct/search/` | Inverted index, dialect-2 query parser, vector KNN, RRF/LINEAR hybrid fusion |
+| **AI** | `internal/ai/` | Server-side embedding (local + OpenAI-compatible HTTP) and markdown-aware chunking |
 | **GeoHash** | `internal/lib/geohash/` | Geohash encoding/decoding |
 | **Wildcard** | `internal/lib/wildcard/` | Glob-style pattern matching |
 | **Lock** | `internal/datastruct/lock/` | Lock map for key-level locking |

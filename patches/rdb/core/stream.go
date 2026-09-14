@@ -334,7 +334,7 @@ func (dec *Decoder) readStreamGroups(version uint) ([]*model.StreamGroup, error)
 }
 
 // WriteStreamObject writes a stream object to RDB file
-func (enc *Encoder) WriteStreamObject(key string, stream *model.StreamObject, options ...interface{}) error {
+func (enc *Encoder) WriteStreamObject(key string, stream *model.StreamObject, options ...any) error {
 	err := enc.beforeWriteObject(options...)
 	if err != nil {
 		return err

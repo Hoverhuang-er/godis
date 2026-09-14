@@ -5,10 +5,10 @@ import "container/list"
 // pageSize must be even
 const pageSize = 1024
 
-// QuickList is a linked list of page (which type is []interface{})
+// QuickList is a linked list of page (which type is []any)
 // QuickList has better performance than LinkedList of Add, Range and memory usage
 type QuickList struct {
-	data *list.List // list of []interface{}
+	data *list.List // list of []any
 	size int
 }
 
@@ -27,19 +27,19 @@ func NewQuickList() *QuickList {
 }
 
 // Add adds value to the tail
-func (ql *QuickList) Add(val interface{}) {
+func (ql *QuickList) Add(val any) {
 	ql.size++
 	if ql.data.Len() == 0 { // empty list
-		page := make([]interface{}, 0, pageSize)
+		page := make([]any, 0, pageSize)
 		page = append(page, val)
 		ql.data.PushBack(page)
 		return
 	}
 	// assert list.data.Back() != nil
 	backNode := ql.data.Back()
-	backPage := backNode.Value.([]interface{})
+	backPage := backNode.Value.([]any)
 	if len(backPage) == cap(backPage) { // full page, create new page
-		page := make([]interface{}, 0, pageSize)
+		page := make([]any, 0, pageSize)
 		page = append(page, val)
 		ql.data.PushBack(page)
 		return
@@ -58,7 +58,7 @@ func (ql *QuickList) find(index int) *iterator {
 		panic("index out of bound")
 	}
 	var n *list.Element
-	var page []interface{}
+	var page []any
 	var pageBeg int
 	if index < ql.size/2 {
 		// search from front
@@ -66,7 +66,7 @@ func (ql *QuickList) find(index int) *iterator {
 		pageBeg = 0
 		for {
 			// assert: n != nil
-			page = n.Value.([]interface{})
+			page = n.Value.([]any)
 			if pageBeg+len(page) > index {
 				break
 			}
@@ -78,7 +78,7 @@ func (ql *QuickList) find(index int) *iterator {
 		n = ql.data.Back()
 		pageBeg = ql.size
 		for {
-			page = n.Value.([]interface{})
+			page = n.Value.([]any)
 			pageBeg -= len(page)
 			if pageBeg <= index {
 				break
@@ -94,12 +94,12 @@ func (ql *QuickList) find(index int) *iterator {
 	}
 }
 
-func (iter *iterator) get() interface{} {
+func (iter *iterator) get() any {
 	return iter.page()[iter.offset]
 }
 
-func (iter *iterator) page() []interface{} {
-	return iter.node.Value.([]interface{})
+func (iter *iterator) page() []any {
+	return iter.node.Value.([]any)
 }
 
 // next returns whether iter is in bound
@@ -133,7 +133,7 @@ func (iter *iterator) prev() bool {
 		return false
 	}
 	iter.node = iter.node.Prev()
-	prevPage := iter.node.Value.([]interface{})
+	prevPage := iter.node.Value.([]any)
 	iter.offset = len(prevPage) - 1
 	return true
 }
@@ -160,29 +160,29 @@ func (iter *iterator) atBegin() bool {
 }
 
 // Get returns value at the given index
-func (ql *QuickList) Get(index int) (val interface{}) {
+func (ql *QuickList) Get(index int) (val any) {
 	iter := ql.find(index)
 	return iter.get()
 }
 
-func (iter *iterator) set(val interface{}) {
+func (iter *iterator) set(val any) {
 	page := iter.page()
 	page[iter.offset] = val
 }
 
 // Set updates value at the given index, the index should between [0, list.size]
-func (ql *QuickList) Set(index int, val interface{}) {
+func (ql *QuickList) Set(index int, val any) {
 	iter := ql.find(index)
 	iter.set(val)
 }
 
-func (ql *QuickList) Insert(index int, val interface{}) {
+func (ql *QuickList) Insert(index int, val any) {
 	if index == ql.size { // insert at
 		ql.Add(val)
 		return
 	}
 	iter := ql.find(index)
-	page := iter.node.Value.([]interface{})
+	page := iter.node.Value.([]any)
 	if len(page) < pageSize {
 		// insert into not full page
 		page = append(page[:iter.offset+1], page[iter.offset:]...)
@@ -192,7 +192,7 @@ func (ql *QuickList) Insert(index int, val interface{}) {
 		return
 	}
 	// insert into a full page may cause memory copy, so we split a full page into two half pages
-	var nextPage []interface{}
+	var nextPage []any
 	nextPage = append(nextPage, page[pageSize/2:]...) // pageSize must be even
 	page = page[:pageSize/2]
 	if iter.offset < len(page) {
@@ -209,7 +209,7 @@ func (ql *QuickList) Insert(index int, val interface{}) {
 	ql.size++
 }
 
-func (iter *iterator) remove() interface{} {
+func (iter *iterator) remove() any {
 	page := iter.page()
 	val := page[iter.offset]
 	page = append(page[:iter.offset], page[iter.offset+1:]...)
@@ -231,7 +231,7 @@ func (iter *iterator) remove() interface{} {
 			if prevNode := iter.node.Prev(); prevNode != nil {
 				iter.ql.data.Remove(iter.node)
 				iter.node = prevNode
-				iter.offset = len(prevNode.Value.([]interface{}))
+				iter.offset = len(prevNode.Value.([]any))
 			} else {
 				// removed last element, ql is empty now
 				iter.ql.data.Remove(iter.node)
@@ -250,7 +250,7 @@ func (iter *iterator) remove() interface{} {
 }
 
 // Remove removes value at the given index
-func (ql *QuickList) Remove(index int) interface{} {
+func (ql *QuickList) Remove(index int) any {
 	iter := ql.find(index)
 	return iter.remove()
 }
@@ -261,13 +261,13 @@ func (ql *QuickList) Len() int {
 }
 
 // RemoveLast removes the last element and returns its value
-func (ql *QuickList) RemoveLast() interface{} {
+func (ql *QuickList) RemoveLast() any {
 	if ql.Len() == 0 {
 		return nil
 	}
 	ql.size--
 	lastNode := ql.data.Back()
-	lastPage := lastNode.Value.([]interface{})
+	lastPage := lastNode.Value.([]any)
 	if len(lastPage) == 1 {
 		ql.data.Remove(lastNode)
 		return lastPage[0]
@@ -359,7 +359,7 @@ func (ql *QuickList) ForEach(consumer Consumer) {
 
 func (ql *QuickList) Contains(expected Expected) bool {
 	contains := false
-	ql.ForEach(func(i int, actual interface{}) bool {
+	ql.ForEach(func(i int, actual any) bool {
 		if expected(actual) {
 			contains = true
 			return false
@@ -370,7 +370,7 @@ func (ql *QuickList) Contains(expected Expected) bool {
 }
 
 // Range returns elements which index within [start, stop)
-func (ql *QuickList) Range(start int, stop int) []interface{} {
+func (ql *QuickList) Range(start int, stop int) []any {
 	if start < 0 || start >= ql.Len() {
 		panic("`start` out of range")
 	}
@@ -378,7 +378,7 @@ func (ql *QuickList) Range(start int, stop int) []interface{} {
 		panic("`stop` out of range")
 	}
 	sliceSize := stop - start
-	slice := make([]interface{}, 0, sliceSize)
+	slice := make([]any, 0, sliceSize)
 	iter := ql.find(start)
 	i := 0
 	for i < sliceSize {

@@ -205,7 +205,7 @@ func WithGlobalMeta() GlobalMetaOption {
 	return GlobalMetaOption(true)
 }
 
-func wrapDecoder(dec decoder, options ...interface{}) (decoder, error) {
+func wrapDecoder(dec decoder, options ...any) (decoder, error) {
 	var regexOpt RegexOption
 	var noExpiredOpt NoExpiredOption
 	var expirationOpt ExpirationOption
@@ -229,7 +229,7 @@ func wrapDecoder(dec decoder, options ...interface{}) (decoder, error) {
 		inner, ok := dec.(*core.Decoder)
 		if ok {
 			inner.WithSpecialOpCode()
-		}	
+		}
 	}
 	if regexOpt != nil {
 		var err error

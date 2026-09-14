@@ -14,7 +14,7 @@ import (
 
 // FindBiggestKeys read rdb file and find the largest N keys.
 // The invoker owns output, FindBiggestKeys won't close it
-func FindBiggestKeys(rdbFilename string, topN int, output *os.File, options ...interface{}) error {
+func FindBiggestKeys(rdbFilename string, topN int, output *os.File, options ...any) error {
 	if rdbFilename == "" {
 		return errors.New("src file path is required")
 	}

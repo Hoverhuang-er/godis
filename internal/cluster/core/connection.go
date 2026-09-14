@@ -72,10 +72,10 @@ func (factory *defaultClientFactory) BorrowPeerClient(peerAddr string) (peerClie
 	var connectionPool *pool.Pool
 	raw, ok := factory.nodeConnections.Get(peerAddr)
 	if !ok {
-		creator := func() (interface{}, error) {
+		creator := func() (any, error) {
 			return factory.NewPeerClient(peerAddr)
 		}
-		finalizer := func(x interface{}) {
+		finalizer := func(x any) {
 			slog.Debug("destroy client")
 			cli, ok := x.(client.Client)
 			if !ok {
@@ -170,10 +170,9 @@ func newDefaultClientFactory() *defaultClientFactory {
 }
 
 func (factory *defaultClientFactory) Close() error {
-	factory.nodeConnections.ForEach(func(key string, val interface{}) bool {
+	factory.nodeConnections.ForEach(func(key string, val any) bool {
 		val.(*pool.Pool).Close()
 		return true
 	})
 	return nil
 }
-

@@ -14,7 +14,7 @@ import (
 
 func reindexHash(key string, dict Dict.Dict) {
 	fields := make(map[string]string)
-	dict.ForEach(func(field string, val interface{}) bool {
+	dict.ForEach(func(field string, val any) bool {
 		if bytes, ok := val.([]byte); ok {
 			fields[field] = string(bytes)
 		}
@@ -53,30 +53,41 @@ func (db *DB) getOrInitDict(key string) (dict Dict.Dict, inited bool, errReply p
 	return dict, inited, nil
 }
 
-// execHSet sets field in hash table
+// execHSet sets one or more fields in a hash table and returns how many fields
+// were newly added, matching Redis.
 func execHSet(db *DB, args [][]byte) redis.Reply {
+	if len(args)%2 != 1 {
+		return protocol.MakeSyntaxErrReply()
+	}
 	key := string(args[0])
-	field := string(args[1])
-	value := args[2]
 
-	dict, _, errReply := db.getOrInitDict(key)
+	d, _, errReply := db.getOrInitDict(key)
 	if errReply != nil {
 		return errReply
 	}
 
-	result := dict.Put(field, value)
-	db.addAof(utils.ToCmdLine3("hset", args...))
-	if cb := db.hashFieldCallback; cb != nil {
-		cb(db.index, key, field)
+	added := 0
+	fields := make([]string, 0, (len(args)-1)/2)
+	for i := 1; i+1 < len(args); i += 2 {
+		field := string(args[i])
+		fields = append(fields, field)
+		added += int(d.Put(field, args[i+1]))
+		if cb := db.hashFieldCallback; cb != nil {
+			cb(db.index, key, field)
+		}
 	}
-	reindexHash(key, dict)
-	return protocol.MakeIntReply(int64(result))
+	db.addAof(utils.ToCmdLine3("hset", args...))
+	reindexHash(key, d)
+	return protocol.MakeIntReply(int64(added))
 }
 
 func undoHSet(db *DB, args [][]byte) []CmdLine {
 	key := string(args[0])
-	field := string(args[1])
-	return rollbackHashFields(db, key, field)
+	fields := make([]string, 0, (len(args)-1)/2)
+	for i := 1; i+1 < len(args); i += 2 {
+		fields = append(fields, string(args[i]))
+	}
+	return rollbackHashFields(db, key, fields...)
 }
 
 func execHSetNX(db *DB, args [][]byte) redis.Reply {
@@ -315,7 +326,7 @@ func execHKeys(db *DB, args [][]byte) redis.Reply {
 
 	fields := make([][]byte, dict.Len())
 	i := 0
-	dict.ForEach(func(key string, val interface{}) bool {
+	dict.ForEach(func(key string, val any) bool {
 		fields[i] = []byte(key)
 		i++
 		return true
@@ -338,7 +349,7 @@ func execHVals(db *DB, args [][]byte) redis.Reply {
 
 	values := make([][]byte, dict.Len())
 	i := 0
-	dict.ForEach(func(key string, val interface{}) bool {
+	dict.ForEach(func(key string, val any) bool {
 		values[i], _ = val.([]byte)
 		i++
 		return true
@@ -362,7 +373,7 @@ func execHGetAll(db *DB, args [][]byte) redis.Reply {
 	size := dict.Len()
 	result := make([][]byte, size*2)
 	i := 0
-	dict.ForEach(func(key string, val interface{}) bool {
+	dict.ForEach(func(key string, val any) bool {
 		result[i] = []byte(key)
 		i++
 		result[i], _ = val.([]byte)
@@ -583,7 +594,7 @@ func execHScan(db *DB, args [][]byte) redis.Reply {
 }
 
 func init() {
-	registerCommand("HSet", execHSet, writeFirstKey, undoHSet, 4, flagWrite).
+	registerCommand("HSet", execHSet, writeFirstKey, undoHSet, -4, flagWrite).
 		attachCommandExtra([]string{redisFlagWrite, redisFlagDenyOOM, redisFlagFast}, 1, 1, 1)
 	registerCommand("HSetNX", execHSetNX, writeFirstKey, undoHSet, 4, flagWrite).
 		attachCommandExtra([]string{redisFlagWrite, redisFlagDenyOOM, redisFlagFast}, 1, 1, 1)

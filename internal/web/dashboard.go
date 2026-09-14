@@ -158,7 +158,13 @@ var readOnlyCommands = map[string]bool{
 	"xrange": true, "xlen": true, "xread": true,
 	"geodist": true, "geohash": true, "geopos": true,
 	"info": true, "ping": true, "dbsize": true, "time": true,
-	"ft.search": true, "ft.info": true, "ft._list": true,
+	"ft.search": true, "ft.hybrid": true, "ft.info": true, "ft._list": true,
+	"rag.query": true, "rag.docs": true, "rag.info": true,
+	"wiki.get": true, "wiki.list": true, "wiki.links": true, "wiki.backlinks": true,
+	"wiki.index": true, "wiki.log": true, "wiki.source.list": true, "wiki.query": true,
+	"wiki.lint": true, "wiki.export": true,
+	"memory.get": true, "memory.search": true, "memory.sessions": true, "memory.info": true,
+	"llmcache.get": true, "llmcache.stats": true,
 	"ts.get": true, "ts.info": true, "ts.range": true,
 	"json.get": true, "json.type": true, "json.strlen": true, "json.objlen": true, "json.objkeys": true,
 }
@@ -225,7 +231,7 @@ func parseCommand(line string) [][]byte {
 	return result
 }
 
-func formatReplyForWeb(reply interface{}) string {
+func formatReplyForWeb(reply any) string {
 	if reply == nil {
 		return "(nil)"
 	}

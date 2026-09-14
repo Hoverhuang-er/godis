@@ -90,7 +90,7 @@ func TestModuleType(t *testing.T) {
 		expectedResult := "expected-result"
 
 		dec := NewDecoder(bytes.NewBuffer(data)).WithSpecialType(testModuleType,
-			func(h ModuleTypeHandler, encVersion int) (interface{}, error) {
+			func(h ModuleTypeHandler, encVersion int) (any, error) {
 				if encVersion != 42 {
 					t.Errorf("invalid encoding version, expected %d, actual %d",
 						expectedModuleEncVersion, encVersion)

@@ -49,7 +49,7 @@ type Connection struct {
 }
 
 var connPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &Connection{}
 	},
 }
@@ -87,7 +87,6 @@ func NewConn(conn net.Conn) *Connection {
 	c.conn = conn
 	return c
 }
-
 
 // Write sends response to client over tcp connection
 func (c *Connection) Write(b []byte) (int, error) {

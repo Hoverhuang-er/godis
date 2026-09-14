@@ -1,4 +1,4 @@
-# Godis v1.3.2
+# Godis v1.3.5
 
 ![license](https://img.shields.io/github/license/Hoverhuang-er/godis)
 [![Build Status](https://github.com/Hoverhuang-er/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/Hoverhuang-er/godis/actions?query=branch%3Amaster)
@@ -10,15 +10,23 @@
 
 [English](https://github.com/Hoverhuang-er/godis/blob/master/docs/README.md) | [中文版](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_CN.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_JA.md)
 
+📖 **[Dokumentaatio](https://hoverhuang-er.github.io/godis/)**
+
+
 `Godis` on Go-kielellä toteutettu Redis-palvelin. Sen tarkoituksena on tarjota esimerkki korkean suorituskyvyn middlewaren kirjoittamisesta Go-ohjelmointikielellä.
 
 Keskeiset ominaisuudet:
 
 - Redis 8.8.0 -komentoyhteensopivuus
 - Tuki string-, list-, hash-, set-, sorted set- ja bitmap-tietorakenteille
-- RediSearch (FT.CREATE, FT.SEARCH, FT.DROPINDEX jne.)
+- RediSearch (FT.CREATE, FT.SEARCH, FT.HYBRID, FT.DROPINDEX jne.)
 - Time Series (TS.CREATE, TS.ADD, TS.GET, TS.RANGE jne.)
-- Redis-Vector (VECTOR-kenttätyyppi, KNN-haku)
+- Redis-Vector (VECTOR-kenttätyyppi, KNN- ja hybridihaku, JSON-indeksit)
+- Palvelimen tarjoama tietopohja, jota voi kysellä suoraan `redis-cli`:llä ilman asiakaskirjastoa:
+  - RAG (RAG.INGEST / RAG.QUERY — paloittelu, upotus, haku, viitteet)
+  - LLM-wiki (WIKI.* — linkitetyt sivut, linkkiverkko, luotu index/log, lint)
+  - Agentin muisti (MEMORY.ADD / MEMORY.GET / MEMORY.SEARCH)
+  - Semanttinen vastausvälimuisti (LLMCACHE.GET / LLMCACHE.SET)
 - Rinnakkaisydin parempaa suorituskykyä varten
 - TTL (automaattinen vanheneminen)
 - Julkaisu/tilaus (Publish/Subscribe)
@@ -32,6 +40,46 @@ Keskeiset ominaisuudet:
   - Raft-pohjainen klusterimetadatan hallinta. Tukee dynaamista laajennusta, uudelleenbalansointia ja vikasietoisuutta
   - `MSET`, `MSETNX`, `DEL`, `Rename`, `RenameNX` -komennot suoritetaan atomisesti klusteritilassa, ja ne tukevat avaimia useiden solmujen yli
   - `MULTI`-transaktiot ovat tuettuja slotin sisällä klusteritilassa
+
+## Uutta versiossa v1.3.5
+
+Tekstihaku, vektorihaku ja hybridihaku sekä tietopohja, jonka palvelin tarjoaa itse.
+
+**Haku (`FT.*`)**
+
+- `FT.CREATE` tukee `ON HASH`-rakenteen lisäksi `ON JSON` -rakennetta, `AS`-aliaksia ja JSON-polkuun perustuvia kenttiä (esim. `$.features[*]`).
+- Dialect-2-kyselysyntaksi jäsennetään oikein: esisuodattimet, `@tag:{a|b}`, `@num:[min max]`, negaatiot, yhdisteet, `SORTBY`, `RETURN`-projektio, `LIMIT`, `FILTER`, `WITHSCORES`.
+- Kyselyvektorit hyväksytään sekä littlenessä `FLOAT32`-tavujonona, jollaisena Redis-asiakkaat ne lähettävät, että tekstimuodossa.
+- `FT.HYBRID` on uusi: `SEARCH`-lauseke ja `VSIM`-lauseke yhdistetään oletuksena RRF-menetelmällä (Reciprocal Rank Fusion), tai `COMBINE LINEAR`.
+- `FT.CREATE` täydentää indeksin jo tietokannassa olevilla dokumenteilla, joten datan jälkeen luotu indeksi on heti kyseltävissä.
+
+**RAG (`RAG.*`)** — paloittelu, upotus ja haku tapahtuvat palvelimella, joten tietopohjaa voi kysellä pelkällä `redis-cli`:llä:
+
+```
+redis> RAG.INGEST kb doc-1 "HNSW rakentaa kerroksittaisen lähinaapuruusgraafin; kattavuus on vaihdettavissa rakennusaikaan." TITLE "HNSW" SOURCE handbook.md TAG vectors
+1
+redis> RAG.QUERY kb "miten kattavuus on vaihdettavissa rakennusaikaan?" K 3
+# Retrieved context
+
+Query: miten kattavuus on vaihdettavissa rakennusaikaan?
+
+### [1] HNSW
+_source: handbook.md · similarity: 0.624 · kb:doc-1 · chunk 0_
+
+HNSW rakentaa kerroksittaisen lähinaapuruusgraafin; kattavuus on vaihdettavissa rakennusaikaan.
+```
+
+Vastauksen tuottaminen jää kutsujalle. Palvelin palauttaa haetun kontekstin viitteineen, joten generointimallin API-avainta ei tarvitse säilyttää tietokannassa.
+
+**LLM-wiki (`WIKI.*`)** — agentin ylläpitämä pysyvä, linkitetty markdown-kerros, jonka kirjanpidon palvelin hoitaa: `[[page]]`-linkit muodostavat kyseltävän linkkiverkon, `WIKI.INDEX` tuottaa luettelon, `WIKI.LOG` on greppikelausta kestävä historia, `WIKI.LINT` löytää orposivut, rikkinäiset linkit ja puuttuvat tiivistelmät, ja `WIKI.INGEST` arkistoi lähdedokumentin ja listaa sivut, joihin se vaikuttaa.
+
+**Agentin muisti ja välimuisti (`MEMORY.*`, `LLMCACHE.*`)** — `MEMORY.GET` hakee viimeisimmän ikkunan, `MEMORY.SEARCH` löytää merkityksen perusteella vanhempia olennaisia vuoroja, ja semanttinen välimuisti osuu jo tuotettuun vastaukseen, vaikka kysymys olisi muotoiltu toisin.
+
+**Upotusmoottori (`[ai]`)** — oletuksena riippuvuudeton paikallinen upottaja (offline, ei API-avainta, sanastopohjainen), tai mikä tahansa OpenAI-yhteensopiva HTTP-päätepiste (OpenAI, Ollama, vLLM, LM Studio) aidosti semanttiseen hakuun. Indeksi tallentaa vektorin ulottuvuuden ja kieltäytyy sekoittamasta eri ulottuvuuksia sen sijaan, että palauttaisi uskottavalta näyttäviä vääriä tuloksia.
+
+**Go 1.27** — `go.mod`, CI-työnkulut ja Dockerfile päivitettiin Go 1.27:ään, ja `interface{}` korvattiin kaikkialla `any`:llä.
+
+Täydellinen luettelo: [docs/CHANGELOGS.md](CHANGELOGS.md). Käyttöohjeet: [käyttödokumentaatio](githubio/index.md).
 
 Lisätietoja on [kehittajan blogissa](https://www.cnblogs.com/Finley/category/1598973.html) (kiinaksi).
 

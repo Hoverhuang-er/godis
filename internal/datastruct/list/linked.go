@@ -8,13 +8,13 @@ type LinkedList struct {
 }
 
 type node struct {
-	val  interface{}
+	val  any
 	prev *node
 	next *node
 }
 
 // Add adds value to the tail
-func (list *LinkedList) Add(val interface{}) {
+func (list *LinkedList) Add(val any) {
 	if list == nil {
 		panic("list is nil")
 	}
@@ -49,7 +49,7 @@ func (list *LinkedList) find(index int) (n *node) {
 }
 
 // Get returns value at the given index
-func (list *LinkedList) Get(index int) (val interface{}) {
+func (list *LinkedList) Get(index int) (val any) {
 	if list == nil {
 		panic("list is nil")
 	}
@@ -60,7 +60,7 @@ func (list *LinkedList) Get(index int) (val interface{}) {
 }
 
 // Set updates value at the given index, the index should between [0, list.size]
-func (list *LinkedList) Set(index int, val interface{}) {
+func (list *LinkedList) Set(index int, val any) {
 	if list == nil {
 		panic("list is nil")
 	}
@@ -72,7 +72,7 @@ func (list *LinkedList) Set(index int, val interface{}) {
 }
 
 // Insert inserts value at the given index, the original element at the given index will move backward
-func (list *LinkedList) Insert(index int, val interface{}) {
+func (list *LinkedList) Insert(index int, val any) {
 	if list == nil {
 		panic("list is nil")
 	}
@@ -120,7 +120,7 @@ func (list *LinkedList) removeNode(n *node) {
 }
 
 // Remove removes value at the given index
-func (list *LinkedList) Remove(index int) (val interface{}) {
+func (list *LinkedList) Remove(index int) (val any) {
 	if list == nil {
 		panic("list is nil")
 	}
@@ -134,7 +134,7 @@ func (list *LinkedList) Remove(index int) (val interface{}) {
 }
 
 // RemoveLast removes the last element and returns its value
-func (list *LinkedList) RemoveLast() (val interface{}) {
+func (list *LinkedList) RemoveLast() (val any) {
 	if list == nil {
 		panic("list is nil")
 	}
@@ -241,7 +241,7 @@ func (list *LinkedList) ForEach(consumer Consumer) {
 // Contains returns whether the given value exist in the list
 func (list *LinkedList) Contains(expected Expected) bool {
 	contains := false
-	list.ForEach(func(i int, actual interface{}) bool {
+	list.ForEach(func(i int, actual any) bool {
 		if expected(actual) {
 			contains = true
 			return false
@@ -252,7 +252,7 @@ func (list *LinkedList) Contains(expected Expected) bool {
 }
 
 // Range returns elements which index within [start, stop)
-func (list *LinkedList) Range(start int, stop int) []interface{} {
+func (list *LinkedList) Range(start int, stop int) []any {
 	if list == nil {
 		panic("list is nil")
 	}
@@ -264,7 +264,7 @@ func (list *LinkedList) Range(start int, stop int) []interface{} {
 	}
 
 	sliceSize := stop - start
-	slice := make([]interface{}, sliceSize)
+	slice := make([]any, sliceSize)
 	n := list.first
 	i := 0
 	sliceIndex := 0
@@ -282,7 +282,7 @@ func (list *LinkedList) Range(start int, stop int) []interface{} {
 }
 
 // Make creates a new linked list
-func Make(vals ...interface{}) *LinkedList {
+func Make(vals ...any) *LinkedList {
 	list := LinkedList{}
 	for _, v := range vals {
 		list.Add(v)

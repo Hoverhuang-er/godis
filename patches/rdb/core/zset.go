@@ -98,7 +98,7 @@ func (dec *Decoder) readListPackZSet() ([]*model.ZSetEntry, *model.ListpackDetai
 	return entries, detail, nil
 }
 
-func (enc *Encoder) WriteZSetObject(key string, entries []*model.ZSetEntry, options ...interface{}) error {
+func (enc *Encoder) WriteZSetObject(key string, entries []*model.ZSetEntry, options ...any) error {
 	err := enc.beforeWriteObject(options...)
 	if err != nil {
 		return err

@@ -301,15 +301,15 @@ func execLRem(db *DB, args [][]byte) redis.Reply {
 
 	var removed int
 	if count == 0 {
-		removed = list.RemoveAllByVal(func(a interface{}) bool {
+		removed = list.RemoveAllByVal(func(a any) bool {
 			return utils.Equals(a, value)
 		})
 	} else if count > 0 {
-		removed = list.RemoveByVal(func(a interface{}) bool {
+		removed = list.RemoveByVal(func(a any) bool {
 			return utils.Equals(a, value)
 		}, count)
 	} else {
-		removed = list.ReverseRemoveByVal(func(a interface{}) bool {
+		removed = list.ReverseRemoveByVal(func(a any) bool {
 			return utils.Equals(a, value)
 		}, -count)
 	}
@@ -660,7 +660,7 @@ func execLInsert(db *DB, args [][]byte) redis.Reply {
 
 	pivot := string(args[2])
 	index := -1
-	list.ForEach(func(i int, v interface{}) bool {
+	list.ForEach(func(i int, v any) bool {
 		if string(v.([]byte)) == pivot {
 			index = i
 			return false

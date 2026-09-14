@@ -13,7 +13,7 @@ import (
 )
 
 // MemoryProfile read rdb file and analysis memory usage then write result to csv file
-func MemoryProfile(rdbFilename string, csvFilename string, options ...interface{}) error {
+func MemoryProfile(rdbFilename string, csvFilename string, options ...any) error {
 	if rdbFilename == "" {
 		return errors.New("src file path is required")
 	}

@@ -12,13 +12,13 @@ type mockConn struct {
 
 func TestPool(t *testing.T) {
 	connNum := 0
-	factory := func() (interface{}, error) {
+	factory := func() (any, error) {
 		connNum++
 		return &mockConn{
 			open: true,
 		}, nil
 	}
-	finalizer := func(x interface{}) {
+	finalizer := func(x any) {
 		connNum--
 		c := x.(*mockConn)
 		c.open = false
@@ -78,12 +78,12 @@ func TestPool(t *testing.T) {
 }
 
 func TestPool_Waiting(t *testing.T) {
-	factory := func() (interface{}, error) {
+	factory := func() (any, error) {
 		return &mockConn{
 			open: true,
 		}, nil
 	}
-	finalizer := func(x interface{}) {
+	finalizer := func(x any) {
 		c := x.(*mockConn)
 		c.open = false
 	}
@@ -131,7 +131,7 @@ func TestPool_Waiting(t *testing.T) {
 
 func TestPool_CreateErr(t *testing.T) {
 	makeErr := true
-	factory := func() (interface{}, error) {
+	factory := func() (any, error) {
 		if makeErr {
 			makeErr = false
 			return nil, errors.New("mock err")
@@ -140,7 +140,7 @@ func TestPool_CreateErr(t *testing.T) {
 			open: true,
 		}, nil
 	}
-	finalizer := func(x interface{}) {
+	finalizer := func(x any) {
 		c := x.(*mockConn)
 		c.open = false
 	}

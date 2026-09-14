@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	defaultBlockSize = 64 * 1024  // 64KB per block
+	defaultBlockSize = 64 * 1024       // 64KB per block
 	maxBlockSize     = 4 * 1024 * 1024 // 4MB max block
 )
 
@@ -21,7 +21,7 @@ type Arena struct {
 }
 
 type block struct {
-	mem   []byte
+	mem    []byte
 	cursor int64
 }
 
@@ -97,7 +97,7 @@ func (a *Arena) Alloc(n int) []byte {
 	}
 	start := cursor - int64(n)
 	a.mu.Unlock()
-	return b.mem[start:cursor:start+int64(n)]
+	return b.mem[start : cursor : start+int64(n)]
 }
 
 // AllocString allocates memory and copies a string into it, returning the []byte slice.
@@ -159,7 +159,7 @@ var connArenas sync.Pool
 
 func init() {
 	connArenas = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return New(defaultBlockSize)
 		},
 	}
@@ -215,7 +215,7 @@ func NewSlab(elementSize, slabSize int) *SlabAllocator {
 		elementSize: elementSize,
 		slabSize:    actualSlabSize,
 		freelist: &sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return make([]byte, actualSlabSize)
 			},
 		},
@@ -246,7 +246,7 @@ type BufferPool struct {
 func NewBufferPool() *BufferPool {
 	return &BufferPool{
 		pool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				buf := make([]byte, 1024)
 				return &buf
 			},

@@ -9,7 +9,6 @@ import (
 	"github.com/Hoverhuang-er/godis/internal/aof"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/dict"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/list"
-	"github.com/Hoverhuang-er/godis/internal/datastruct/search"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/set"
 	"github.com/Hoverhuang-er/godis/internal/datastruct/sortedset"
 	"github.com/Hoverhuang-er/godis/internal/interface/redis"
@@ -28,10 +27,6 @@ func execDel(db *DB, args [][]byte) redis.Reply {
 	deleted := db.Removes(keys...)
 	if deleted > 0 {
 		db.addAof(utils.ToCmdLine3("del", args...))
-		// Remove deleted keys from search indexes
-		for _, key := range keys {
-			search.RemoveDocByPrefix(key)
-		}
 	}
 	return protocol.MakeIntReply(int64(deleted))
 }
@@ -337,7 +332,7 @@ func execKeys(db *DB, args [][]byte) redis.Reply {
 		return protocol.MakeErrReply("ERR illegal wildcard")
 	}
 	result := make([][]byte, 0)
-	db.data.ForEach(func(key string, val interface{}) bool {
+	db.data.ForEach(func(key string, val any) bool {
 		if IsConfKey(key) {
 			return true
 		}

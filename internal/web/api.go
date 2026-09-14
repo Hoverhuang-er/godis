@@ -155,7 +155,7 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
@@ -225,10 +225,10 @@ func (s *ApiServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // ---- Commands Handler ----
 
 type commandResult struct {
-	Success bool        `json:"success"`
-	Result  interface{} `json:"result,omitempty"`
-	Raw     string      `json:"raw,omitempty"`
-	Error   string      `json:"error,omitempty"`
+	Success bool   `json:"success"`
+	Result  any    `json:"result,omitempty"`
+	Raw     string `json:"raw,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // isAsyncCommand returns true for GET/SET/PUSH/POP family commands that
@@ -677,7 +677,7 @@ func buildCommand(cmdType, key, value, field, member, scoreStr, argsRaw string) 
 
 // ---- Reply Formatting ----
 
-func formatReplyValue(reply interface{}) string {
+func formatReplyValue(reply any) string {
 	if reply == nil {
 		return "(nil)"
 	}
@@ -718,7 +718,7 @@ func formatReplyValue(reply interface{}) string {
 	}
 }
 
-func isErrorReply(reply interface{}) bool {
+func isErrorReply(reply any) bool {
 	if reply == nil {
 		return false
 	}
@@ -731,7 +731,7 @@ func isErrorReply(reply interface{}) bool {
 	return false
 }
 
-func extractError(reply interface{}) string {
+func extractError(reply any) string {
 	if reply == nil {
 		return ""
 	}

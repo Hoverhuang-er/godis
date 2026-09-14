@@ -44,7 +44,7 @@ func subscribe0(hub *Hub, channel string, client redis.Connection) bool {
 		subscribers = list.Make()
 		hub.subs.Put(channel, subscribers)
 	}
-	if subscribers.Contains(func(a interface{}) bool {
+	if subscribers.Contains(func(a any) bool {
 		return a == client
 	}) {
 		return false
@@ -64,7 +64,7 @@ func unsubscribe0(hub *Hub, channel string, client redis.Connection) bool {
 	raw, ok := hub.subs.Get(channel)
 	if ok {
 		subscribers, _ := raw.(*list.LinkedList)
-		subscribers.RemoveAllByVal(func(a interface{}) bool {
+		subscribers.RemoveAllByVal(func(a any) bool {
 			return utils.Equals(a, client)
 		})
 
@@ -164,7 +164,7 @@ func Publish(hub *Hub, args [][]byte) redis.Reply {
 		return protocol.MakeIntReply(0)
 	}
 	subscribers, _ := raw.(*list.LinkedList)
-	subscribers.ForEach(func(i int, c interface{}) bool {
+	subscribers.ForEach(func(i int, c any) bool {
 		client, _ := c.(redis.Connection)
 		if client.GetRespVersion() == redis.Resp3 {
 			pushReply := protocol.MakePushReply([]redis.Reply{

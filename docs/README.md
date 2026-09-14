@@ -1,4 +1,4 @@
-# Godis v1.3.4
+# Godis v1.3.5
 
 ![license](https://img.shields.io/github/license/Hoverhuang-er/godis)
 [![Build Status](https://github.com/Hoverhuang-er/godis/actions/workflows/coverall.yml/badge.svg)](https://github.com/Hoverhuang-er/godis/actions?query=branch%3Amaster)
@@ -9,6 +9,9 @@
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/avelino/awesome-go)
 
 [中文版](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_CN.md) | [日本語](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_JA.md) | [Suomi](https://github.com/Hoverhuang-er/godis/blob/master/docs/README_FI.md)
+
+📖 **[Documentation](https://hoverhuang-er.github.io/godis/)**
+
 
 `Godis` is a golang implementation of Redis Server, which intents to provide an example of writing a high concurrent
 middleware using golang.
@@ -24,9 +27,14 @@ Key Features:
 - Count-min sketch (CMS.INCRBY, CMS.QUERY)
 - Geospatial indexes (GEOADD, GEOSEARCH, etc.)
 - Bitfield (BITFIELD, BITFIELD_RO)
-- RediSearch (FT.CREATE, FT.SEARCH, FT.DROPINDEX, etc.)
+- RediSearch (FT.CREATE, FT.SEARCH, FT.HYBRID, FT.DROPINDEX, etc.)
 - Time Series (TS.CREATE, TS.ADD, TS.GET, TS.RANGE, etc.)
-- Redis-Vector (VECTOR field type, KNN search)
+- Redis-Vector (VECTOR fields, KNN and hybrid search, JSON indexes)
+- Knowledge base served by the server, queryable from `redis-cli` with no client library:
+  - RAG (RAG.INGEST / RAG.QUERY — chunk, embed, retrieve, cite)
+  - LLM wiki (WIKI.* — interlinked pages, link graph, generated index and log, lint)
+  - Agent memory (MEMORY.ADD / MEMORY.GET / MEMORY.SEARCH)
+  - Semantic answer cache (LLMCACHE.GET / LLMCACHE.SET)
 - RedisJSON (JSON.SET, JSON.GET, JSON.DEL, JSON.ARRAPPEND, JSON.OBJKEYS, etc.)
 - Concurrent Core for better performance
 - TTL
@@ -45,6 +53,46 @@ Key Features:
 - Web dashboard for browsing and monitoring (launch with `--web` flag, port 63800)
 - Data migration tool (`--migrate full` / `--migrate inc`) — migrate data from godis to any Redis server with full and incremental modes
 - `MULTI` Commands Transaction is supported within slot in cluster mode
+
+## What's New in v1.3.5
+
+Full-text, vector and hybrid search, plus a knowledge base the server itself serves.
+
+**Search (`FT.*`)**
+
+- `FT.CREATE` takes `ON JSON` as well as `ON HASH`, with `AS` aliases and JSON-path fields such as `$.features[*]`.
+- Dialect-2 queries are parsed properly: pre-filters, `@tag:{a|b}`, `@num:[min max]`, negations, unions, `SORTBY`, `RETURN` projection, `LIMIT`, `FILTER`, `WITHSCORES`.
+- Query vectors are accepted the way Redis clients send them — raw little-endian `FLOAT32` bytes — as well as as text.
+- `FT.HYBRID` is new: a `SEARCH` clause and a `VSIM` clause fused with Reciprocal Rank Fusion, or `COMBINE LINEAR`.
+- `FT.CREATE` backfills documents already in the database, so an index created after the data is queryable immediately.
+
+**RAG (`RAG.*`)** — chunking, embedding and retrieval run inside the server, so a knowledge base can be queried with nothing but `redis-cli`:
+
+```
+redis> RAG.INGEST kb doc-1 "HNSW builds a layered proximity graph; recall is traded against build time." TITLE "HNSW" SOURCE handbook.md TAG vectors
+1
+redis> RAG.QUERY kb "how is recall traded against build time?" K 3
+# Retrieved context
+
+Query: how is recall traded against build time?
+
+### [1] HNSW
+_source: handbook.md · similarity: 0.624 · kb:doc-1 · chunk 0_
+
+HNSW builds a layered proximity graph; recall is traded against build time.
+```
+
+Answer generation stays with the caller. The server returns retrieved context with citations, so no generation API key has to live in the database.
+
+**LLM wiki (`WIKI.*`)** — a persistent, interlinked markdown layer an agent maintains, with the bookkeeping done for it: `[[page]]` links become a queryable graph, `WIKI.INDEX` renders the catalogue, `WIKI.LOG` is a greppable history, `WIKI.LINT` finds orphans, broken links and missing summaries, and `WIKI.INGEST` files a raw source and lists the pages it affects.
+
+**Agent memory and caching (`MEMORY.*`, `LLMCACHE.*`)** — `MEMORY.GET` for the recent window, `MEMORY.SEARCH` for relevant older turns, and a semantic answer cache where a reworded prompt hits the answer that was already generated.
+
+**Embedding backend (`[ai]`)** — a dependency-free local embedder (offline, no API key, lexical) by default, or any OpenAI-compatible HTTP endpoint (OpenAI, Ollama, vLLM, LM Studio) for real semantics. The index records the vector dimension and refuses to mix dimensions rather than returning plausible nonsense.
+
+**Go 1.27** — `go.mod`, CI workflows and Dockerfiles moved to Go 1.27, and `interface{}` is replaced by `any` throughout.
+
+See [docs/CHANGELOGS.md](docs/CHANGELOGS.md) for the full list, and the [usage documentation](docs/githubio/index.md) for guides.
 
 If you could read Chinese, you can find more details in [My Blog](https://www.cnblogs.com/Finley/category/1598973.html).
 
@@ -928,7 +976,7 @@ Write commands (`SET`, `DEL`, etc.) are rejected for safety.
 `ZRANGE`, `ZREVRANGE`, `ZRANK`, `ZREVRANK`, `ZSCORE`, `ZCARD`, `ZCOUNT`, `ZRANGEBYSCORE`,
 `XRANGE`, `XLEN`, `XREAD`, `GEODIST`, `GEOHASH`, `GEOPOS`,
 `INFO`, `PING`, `DBSIZE`, `TIME`,
-`FT.SEARCH`, `FT.INFO`, `FT._LIST`, `TS.GET`, `TS.INFO`, `TS.RANGE`,
+`FT.SEARCH`, `FT.HYBRID`, `FT.INFO`, `FT._LIST`, `TS.GET`, `TS.INFO`, `TS.RANGE`,
 `JSON.GET`, `JSON.TYPE`, `JSON.STRLEN`, `JSON.OBJLEN`, `JSON.OBJKEYS`.
 
 #### GET /api/monitor
@@ -1057,7 +1105,17 @@ godis/
 │   │   ├── transaction.go        # MULTI, EXEC, WATCH — atomic & isolated
 │   │   ├── persistence.go        # RDB loading from disk
 │   │   ├── timeseries.go         # TS.CREATE, TS.ADD, TS.GET, TS.RANGE
-│   │   ├── search.go             # FT.CREATE, FT.SEARCH, FT.DROPINDEX, FT.INFO
+│   │   ├── search.go             # FT.CREATE, FT.SEARCH, FT.HYBRID, FT.DROPINDEX, FT.INFO
+│   │   ├── rag.go                # RAG.INGEST, RAG.QUERY, RAG.DEL, RAG.DOCS, RAG.INFO
+│   │   ├── wiki.go               # WIKI.*: pages, links, index.md, log.md, lint, ingest
+│   │   ├── memory.go             # MEMORY.ADD, MEMORY.GET, MEMORY.SEARCH
+│   │   ├── llmcache.go           # LLMCACHE.SET, LLMCACHE.GET, LLMCACHE.STATS
+│   │   ├── kb.go                 # shared knowledge-base storage and locking
+│   │   ├── rag.go                # RAG.INGEST, RAG.QUERY, RAG.DEL, RAG.DOCS, RAG.INFO
+│   │   ├── wiki.go               # WIKI.*: pages, links, index.md, log.md, lint, ingest
+│   │   ├── memory.go             # MEMORY.ADD, MEMORY.GET, MEMORY.SEARCH
+│   │   ├── llmcache.go           # LLMCACHE.SET, LLMCACHE.GET, LLMCACHE.STATS
+│   │   ├── kb.go                 # shared knowledge-base storage and locking
 │   │   ├── json.go               # JSON.SET, JSON.GET, JSON.DEL, JSON.ARRAPPEND, etc.
 │   │   ├── bloom.go              # BF.ADD, BF.EXISTS, BF.RESERVE, BF.MADD
 │   │   ├── hyperloglog.go        # PFADD, PFCOUNT, PFMERGE

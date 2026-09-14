@@ -306,7 +306,7 @@ func (enc *Encoder) writeNanString(s string) error {
 	return enc.writeSimpleString(s)
 }
 
-func (enc *Encoder) WriteStringObject(key string, value []byte, options ...interface{}) error {
+func (enc *Encoder) WriteStringObject(key string, value []byte, options ...any) error {
 	err := enc.beforeWriteObject(options...)
 	if err != nil {
 		return err

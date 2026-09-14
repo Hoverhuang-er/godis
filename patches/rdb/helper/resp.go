@@ -193,7 +193,7 @@ func streamToCmd(stream *model.StreamObject) []CmdLine {
 }
 
 // ObjectToCmd convert redis object to redis command line
-func ObjectToCmd(obj model.RedisObject, opts ...interface{}) []CmdLine {
+func ObjectToCmd(obj model.RedisObject, opts ...any) []CmdLine {
 	if obj == nil {
 		return nil
 	}

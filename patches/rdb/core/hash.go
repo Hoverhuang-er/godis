@@ -315,7 +315,7 @@ func (dec *Decoder) readListPackHashEx(rc bool) (map[string][]byte, map[string]i
 	return m, e, detail, nil
 }
 
-func (enc *Encoder) WriteHashMapObject(key string, hash map[string][]byte, options ...interface{}) error {
+func (enc *Encoder) WriteHashMapObject(key string, hash map[string][]byte, options ...any) error {
 	err := enc.beforeWriteObject(options...)
 	if err != nil {
 		return err
@@ -334,7 +334,7 @@ func (enc *Encoder) WriteHashMapObject(key string, hash map[string][]byte, optio
 	return nil
 }
 
-func (enc *Encoder) WriteHashMapObjectEx(key string, hash map[string][]byte, expire map[string]int64, options ...interface{}) error {
+func (enc *Encoder) WriteHashMapObjectEx(key string, hash map[string][]byte, expire map[string]int64, options ...any) error {
 	err := enc.beforeWriteObject(options...)
 	if err != nil {
 		return err
@@ -352,7 +352,7 @@ func (enc *Encoder) WriteHashMapObjectEx(key string, hash map[string][]byte, exp
 	return nil
 }
 
-func (enc *Encoder) writeHashEncoding(key string, hash map[string][]byte, options ...interface{}) error {
+func (enc *Encoder) writeHashEncoding(key string, hash map[string][]byte, options ...any) error {
 	err := enc.write([]byte{typeHash})
 	if err != nil {
 		return err
@@ -378,7 +378,7 @@ func (enc *Encoder) writeHashEncoding(key string, hash map[string][]byte, option
 	return nil
 }
 
-func (enc *Encoder) writeHashEncodingEx(key string, hash map[string][]byte, expire map[string]int64, options ...interface{}) error {
+func (enc *Encoder) writeHashEncodingEx(key string, hash map[string][]byte, expire map[string]int64, options ...any) error {
 	err := enc.write([]byte{typeHashWithHfe})
 	if err != nil {
 		return err
@@ -436,7 +436,7 @@ func (enc *Encoder) writeHashEncodingEx(key string, hash map[string][]byte, expi
 	return nil
 }
 
-func (enc *Encoder) writeHash2Encoding(key string, hash map[string][]byte, expire map[string]int64, options ...interface{}) error {
+func (enc *Encoder) writeHash2Encoding(key string, hash map[string][]byte, expire map[string]int64, options ...any) error {
 	ttl := make([]byte, 8)
 	err := enc.write([]byte{typeHash2})
 	if err != nil {
@@ -472,7 +472,7 @@ func (enc *Encoder) writeHash2Encoding(key string, hash map[string][]byte, expir
 	return nil
 }
 
-func (enc *Encoder) tryWriteZipListHashMap(key string, hash map[string][]byte, options ...interface{}) (bool, error) {
+func (enc *Encoder) tryWriteZipListHashMap(key string, hash map[string][]byte, options ...any) (bool, error) {
 	if len(hash) > enc.hashZipListOpt.getMaxEntries() {
 		return false, nil
 	}
