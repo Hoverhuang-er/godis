@@ -234,7 +234,17 @@ jobs:
         run: echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
       - name: Package Helm Chart
-        run: helm package charts/godis --destination .tmp/
+        run: |
+          # Derive the chart version from the release tag rather than trusting
+          # the value committed in Chart.yaml. That value was left at 1.3.1 for
+          # three releases, so every push silently overwrote the same chart
+          # version and the registry stayed stale.
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version: .*/version: ${VERSION}/" charts/godis/Chart.yaml
+          sed -i "s/^appVersion: .*/appVersion: \"${VERSION}\"/" charts/godis/Chart.yaml
+          echo "packaging chart ${VERSION}:"
+          grep -E '^(version|appVersion):' charts/godis/Chart.yaml
+          helm package charts/godis --destination .tmp/
 
       - uses: docker/login-action@v3
         with:
