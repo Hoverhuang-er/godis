@@ -251,6 +251,11 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
+      # The changelog is read from docs/CHANGELOGS.md, so the repository has to
+      # be present. Without this checkout the file is missing, the fallback uses
+      # git (also missing), and the release ships an empty changelog.
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -275,6 +280,12 @@ jobs:
               | sed 's/^/- /' >> CHANGELOGS-latest.md || true
           fi
           echo "" >> CHANGELOGS-latest.md
+          # A release whose notes are blank is worse than no release: fail rather
+          # than publish one.
+          if [ "$(wc -c < CHANGELOGS-latest.md)" -lt 100 ]; then
+            echo "::error::generated changelog is empty; refusing to publish a release without notes"
+            exit 1
+          fi
           cat CHANGELOGS-latest.md
 
       - uses: softprops/action-gh-release@v2
