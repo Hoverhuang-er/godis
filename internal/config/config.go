@@ -166,6 +166,21 @@ func (p *ServerProperties) RaftAnnounceAddress() string {
 	return p.RaftListenAddr
 }
 
+// ConnectAddress is the address local clients (the embedded API server, the
+// web dashboard) dial to reach this server. A wildcard bind such as 0.0.0.0 or
+// :: is not a dialable destination, so it maps to the matching loopback.
+func (p *ServerProperties) ConnectAddress() string {
+	host := p.Bind
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		if ip.To4() != nil {
+			host = "127.0.0.1"
+		} else {
+			host = "::1"
+		}
+	}
+	return net.JoinHostPort(host, strconv.Itoa(p.Port))
+}
+
 func (p *ServerProperties) HeartbeatInterval() time.Duration {
 	interval := p.ClusterHeartbeatInterval
 	if interval <= 0 {

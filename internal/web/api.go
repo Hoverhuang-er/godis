@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -231,36 +230,6 @@ type commandResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// isAsyncCommand returns true for GET/SET/PUSH/POP family commands that
-// should be dispatched asynchronously (return 200 immediately, execute in goroutine).
-func isAsyncCommand(cmd string) bool {
-	switch cmd {
-	// GET-like reads
-	case "get", "strlen",
-		"hget", "hexists", "hlen", "hstrlen", "hkeys", "hvals", "hgetall", "hmget",
-		"lindex", "llen", "lrange",
-		"sismember", "scard", "smembers", "srandmember",
-		"zscore", "zrank", "zrevrank", "zcard", "zcount", "zrange", "zrevrange":
-		return true
-	// SET-like writes
-	case "set", "setnx", "setex", "psetex", "append", "getset", "getdel",
-		"incr", "incrby", "incrbyfloat", "decr", "decrby",
-		"hset", "hsetnx", "hdel", "hincrby", "hincrbyfloat",
-		"lrem", "sadd", "srem", "smove", "zadd", "zrem", "zincrby",
-		"del", "rename", "renamenx", "copy",
-		"expire", "expireat", "pexpire", "pexpireat", "persist":
-		return true
-	// PUSH-like
-	case "lpush", "rpush", "lpushx", "rpushx":
-		return true
-	// POP-like
-	case "lpop", "rpop", "spop":
-		return true
-	default:
-		return false
-	}
-}
-
 func (s *ApiServer) handleCommands(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -293,49 +262,7 @@ func (s *ApiServer) handleCommands(w http.ResponseWriter, r *http.Request) {
 	cliArgs = append(cliArgs, utils.ToCmdLine(args...)...)
 	dbStr := q.Get("db")
 
-	// Async path: GET/SET/PUSH/POP families — return 200 immediately, execute in background
-	if isAsyncCommand(cmd) {
-		client := s.getClient()
-		if client == nil {
-			writeJSON(w, http.StatusServiceUnavailable, commandResult{Error: "redis connection not ready"})
-			return
-		}
-
-		writeJSON(w, http.StatusOK, commandResult{
-			Success: true,
-			Result:  "accepted",
-		})
-
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				if dbStr != "" {
-					if dbIdx, err := strconv.Atoi(dbStr); err == nil && dbIdx >= 0 && dbIdx < config.Properties.Databases {
-						client.Send(utils.ToCmdLine("SELECT", strconv.Itoa(dbIdx)))
-					}
-				}
-				reply := client.Send(cliArgs)
-				if isErrorReply(reply) {
-					slog.Warn("async command failed",
-						"cmd", cmd,
-						"error", extractError(reply))
-				}
-			}()
-
-			select {
-			case <-done:
-			case <-ctx.Done():
-				slog.Warn("async command timed out", "cmd", cmd, "timeout", "30s")
-			}
-		}()
-		return
-	}
-
-	// Synchronous path: all other commands (flush, save, info, config, keys, etc.)
+	// Every command waits for the reply: the HTTP response carries the value.
 	client := s.getClient()
 	if client == nil {
 		writeJSON(w, http.StatusServiceUnavailable, commandResult{Error: "redis connection not ready"})

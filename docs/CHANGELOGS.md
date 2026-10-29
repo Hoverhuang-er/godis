@@ -1,5 +1,13 @@
 # Godis Changelog
 
+## Unreleased
+
+### Fixes
+
+- fix: the redis client hot-looped `reconnect with: ...` when a peer accepted and immediately closed the connection. It now retries silently in the background with exponential backoff (1s → 30s), reports the outage once, and logs a single INFO line once traffic resumes.
+- fix: the embedded HTTP API client dialled the wildcard bind address (`0.0.0.0:6379`), which routes to loopback and can hit an unrelated listener; local clients now dial a loopback address (`ConnectAddress()`).
+- fix: `GET /api/commands` answered `{"result":"accepted"}` for GET/SET/PUSH/POP-family commands and executed them in a background goroutine; every command now waits for the reply and returns its value.
+
 ## v1.3.5 (2026-09-14)
 
 ### Features
