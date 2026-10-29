@@ -7,13 +7,13 @@ import (
 	"github.com/Hoverhuang-er/godis/internal/lib/sync/wait"
 	"github.com/Hoverhuang-er/godis/internal/redis/parser"
 	"github.com/Hoverhuang-er/godis/internal/redis/protocol"
+	"log/slog"
 	"net"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"log/slog"
 )
 
 const (
@@ -32,6 +32,7 @@ type Client struct {
 
 	status  int32
 	working *sync.WaitGroup // its counter presents unfinished requests(pending and waiting)
+	backoff time.Duration   // reconnect backoff, only touched by handleRead
 }
 
 // request is a message sends to redis server
@@ -47,6 +48,11 @@ type request struct {
 const (
 	chanSize = 256
 	maxWait  = 3 * time.Second
+
+	// Reconnect backoff: a peer that accepts and then closes immediately must
+	// not spin the read loop at full speed.
+	minReconnectBackoff = time.Second
+	maxReconnectBackoff = 30 * time.Second
 )
 
 // MakeClient creates a new client
@@ -92,36 +98,32 @@ func (client *Client) Close() {
 	close(client.waitingReqs)
 }
 
+// reconnect dials in the background until it succeeds or the client is closed.
+// The outage itself is reported once by handleRead; retries stay silent and
+// back off, so an unreachable or flapping peer cannot flood the log.
 func (client *Client) reconnect() {
-	slog.Info("reconnect with: " + client.addr)
-	_ = client.conn.Close() // ignore possible errors from repeated closes
-
-	var conn net.Conn
-	for i := 0; i < 3; i++ {
-		var err error
-		conn, err = net.Dial("tcp", client.addr)
-		if err != nil {
-			slog.Error("reconnect error: " + err.Error())
-			time.Sleep(time.Second)
-			continue
-		} else {
-			break
+	for atomic.LoadInt32(&client.status) != closed {
+		client.backoff = min(max(2*client.backoff, minReconnectBackoff), maxReconnectBackoff)
+		time.Sleep(client.backoff)
+		if atomic.LoadInt32(&client.status) == closed {
+			return
 		}
-	}
-	if conn == nil { // reach max retry, abort
-		client.Close()
+
+		conn, err := net.Dial("tcp", client.addr)
+		if err != nil {
+			continue
+		}
+		_ = client.conn.Close() // ignore possible errors from repeated closes
+		client.conn = conn
+
+		close(client.waitingReqs)
+		for req := range client.waitingReqs {
+			req.err = errors.New("connection closed")
+			req.waiting.Done()
+		}
+		client.waitingReqs = make(chan *request, chanSize)
 		return
 	}
-	client.conn = conn
-
-	close(client.waitingReqs)
-	for req := range client.waitingReqs {
-		req.err = errors.New("connection closed")
-		req.waiting.Done()
-	}
-	client.waitingReqs = make(chan *request, chanSize)
-	// restart handle read
-	go client.handleRead()
 }
 
 func (client *Client) heartbeat() {
@@ -214,16 +216,29 @@ func (client *Client) finishRequest(reply redis.Reply) {
 }
 
 func (client *Client) handleRead() {
-	ch := parser.ParseStream(client.conn)
-	for payload := range ch {
-		if payload.Err != nil {
-			status := atomic.LoadInt32(&client.status)
-			if status == closed {
-				return
+	for atomic.LoadInt32(&client.status) != closed {
+		for payload := range parser.ParseStream(client.conn) {
+			if payload.Err != nil {
+				if atomic.LoadInt32(&client.status) == closed {
+					return
+				}
+				// backoff == 0 marks the first failure of an outage: report it
+				// once, then keep retrying silently (see reconnect).
+				if client.backoff == 0 {
+					slog.Error("connection lost, reconnecting: "+payload.Err.Error(), "addr", client.addr)
+				}
+				break
 			}
-			client.reconnect()
+			if client.backoff != 0 {
+				// Traffic proves the new connection works; announce it once.
+				client.backoff = 0
+				slog.Info("reconnected to: " + client.addr)
+			}
+			client.finishRequest(payload.Data)
+		}
+		if atomic.LoadInt32(&client.status) == closed {
 			return
 		}
-		client.finishRequest(payload.Data)
+		client.reconnect()
 	}
 }

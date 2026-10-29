@@ -204,7 +204,7 @@ func main() {
 
 		if config.Properties.HttpApiEnabled {
 			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))
-			redisAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
+			redisAddr := config.Properties.ConnectAddress()
 			apiSrv := web.NewApiServer(apiAddr, redisAddr, config.Properties.RequirePass)
 			apiSrv.Start()
 		}
@@ -219,7 +219,7 @@ func main() {
 
 		if config.Properties.HttpApiEnabled {
 			apiAddr := net.JoinHostPort(config.Properties.HttpApiHost, strconv.Itoa(config.Properties.HttpApiPort))
-			redisAddr := net.JoinHostPort(config.Properties.Bind, strconv.Itoa(config.Properties.Port))
+			redisAddr := config.Properties.ConnectAddress()
 			apiSrv := web.NewApiServer(apiAddr, redisAddr, config.Properties.RequirePass)
 			apiSrv.Start()
 		}
